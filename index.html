@@ -3,6 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<script>
+(function(){
+  var t = "dark";
+  try { t = localStorage.getItem("cs_theme") || "dark" } catch(e) {}
+  if (t !== "auto") document.documentElement.setAttribute("data-theme", t === "light" ? "light" : "dark");
+})();
+</script>
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
 <meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -21,7 +31,7 @@
   --am:#b45309; --am-bg:#fffbeb; --am-bd:#fde68a;
   --gr:#15803d; --gr-bg:#f0fdf4; --gr-bd:#bbf7d0;
   --warn-bg:#fffbeb; --warn-fg:#92400e;
-  color-scheme:light;
+  color-scheme:light dark;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
@@ -69,6 +79,7 @@ input{font:inherit; color:inherit}
 .dot.ok{background:var(--gr)} .dot.old{background:var(--am)} .dot.bad{background:var(--up)}
 .ibtn{width:44px; height:44px; border:1px solid var(--bd); border-radius:var(--radius); display:inline-flex; align-items:center; justify-content:center; color:var(--mfg); background:var(--card)}
 .ibtn:hover{background:var(--muted)}
+.ibtn.tx{width:auto; min-width:64px; padding:0 14px; font-size:13.5px; color:var(--fg)}
 svg.i{width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round}
 .alert{border:1px solid var(--am-bd); background:var(--warn-bg); color:var(--warn-fg); border-radius:var(--radius); padding:10px 12px; font-size:13px; margin-bottom:12px}
 
@@ -79,11 +90,10 @@ svg.i{width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:2; s
 .lbl{font-size:12px; color:var(--mfg); margin:0 2px 6px}
 .seg{display:flex; gap:3px; padding:3px; background:var(--muted); border-radius:var(--radius); overflow-x:auto; scrollbar-width:none}
 .seg::-webkit-scrollbar{display:none}
-.seg button{flex:1 0 auto; min-width:48px; height:42px; padding:0 10px; border-radius:7px; font-size:13.5px; color:var(--mfg); white-space:nowrap}
+.seg button{flex:1 1 0; min-width:0; height:42px; padding:0 2px; border-radius:7px; font-size:13px; color:var(--mfg); white-space:nowrap}
 .seg button[aria-pressed="true"]{background:var(--fg); color:var(--bg); font-weight:600}
-.chips{display:flex; gap:6px; overflow-x:auto; padding:2px 0 6px; margin:12px 0 6px; scrollbar-width:none}
-.chips::-webkit-scrollbar{display:none}
-.chip{flex:none; height:38px; padding:0 13px; border:1px solid var(--bd); border-radius:999px; font-size:13.5px; color:var(--mfg); background:var(--card); white-space:nowrap}
+.chips{display:flex; flex-wrap:wrap; gap:6px; margin:12px 0 8px}
+.chip{flex:none; height:36px; padding:0 12px; border:1px solid var(--bd); border-radius:999px; font-size:13.5px; color:var(--mfg); background:var(--card); white-space:nowrap}
 .chip b{font-weight:600; color:var(--fg); margin-left:5px}
 .chip[aria-pressed="true"]{background:var(--fg); color:var(--bg); border-color:var(--fg)}
 .chip[aria-pressed="true"] b{color:var(--bg)}
@@ -191,7 +201,10 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
         <h1>코인 신호판</h1>
         <div class="sub"><span class="dot" id="dot"></span><span id="sub">불러오는 중</span></div>
       </div>
+      <div style="display:flex;gap:8px">
+      <button class="ibtn tx" id="theme" aria-label="화면 색 바꾸기">어둡게</button>
       <button class="ibtn" id="rf" aria-label="새로고침"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></button>
+      </div>
     </div>
     <div id="stale" class="alert" hidden></div>
 
@@ -512,7 +525,21 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
       });
   }
 
+  var THEMES = [["dark","어둡게"],["light","밝게"],["auto","자동"]];
+  function curTheme(){ try { return localStorage.getItem("cs_theme") || "dark" } catch(e) { return "dark" } }
+  function setTheme(t){
+    var r = document.documentElement;
+    if(t === "auto") r.removeAttribute("data-theme"); else r.setAttribute("data-theme", t);
+    try { localStorage.setItem("cs_theme", t) } catch(e) {}
+    THEMES.forEach(function(x){ if(x[0] === t) $("theme").textContent = x[1] });
+  }
+
   (function init(){
+    setTheme(curTheme());
+    $("theme").onclick = function(){
+      var i = 0; THEMES.forEach(function(x, k){ if(x[0] === curTheme()) i = k });
+      setTheme(THEMES[(i + 1) % THEMES.length][0]);
+    };
     var l = $("list"); for(var i = 0; i < 4; i++) l.appendChild(el("div", "sk"));
     $("q").addEventListener("input", function(){ S.q = this.value.trim(); S.shown = 30; if(DATA) renderList() });
     $("more").onclick = function(){ S.shown += 30; renderList() };
