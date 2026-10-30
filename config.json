@@ -20,12 +20,16 @@
     "spike_pct": 5,
     "spike_minutes": 60,
     "targets": true,
-    "cooldown_minutes": 180
+    "cooldown_minutes": 180,
+    "low_zone": true,
+    "new_low": true,
+    "rebound": true
   },
   "targets": {
     "KRW-BTC": {
       "target": null,
       "stop": null
     }
-  }
+  },
+  "min_trade_value_24h": 0
 }

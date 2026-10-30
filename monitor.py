@@ -25,6 +25,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 
 import coin_signal as cs
+import universe
 
 KST = timezone(timedelta(hours=9))
 SITE, WEB, STATE_DIR = "site", "web", "state"
@@ -51,8 +52,10 @@ DEFAULTS = {
     "sell_threshold": -4,
     "fee": 0.0025,
     "dashboard_url": "",
+    "min_trade_value_24h": 0,
     "alerts": {"signal_change": True, "spike": True, "spike_pct": 5, "spike_minutes": 60,
-               "targets": True, "cooldown_minutes": 180},
+               "targets": True, "low_zone": True, "new_low": True, "rebound": True,
+               "cooldown_minutes": 180},
     "targets": {},
 }
 
@@ -312,6 +315,28 @@ def msg_target(m, kind, level):
     return f"{icon} · {head(m)}\n현재가 {fmt_price(m['price'])}원 (설정 {fmt_price(level)}원)"
 
 
+def msg_low(m, coin, kind):
+    lo, p = coin["lo"], coin["p"]
+    head_line = f"{m['name']} ({m['market']})"
+    now_line = f"현재가 {fmt_price(p)}원 (1시간 {fmt_pct(m['chg'])})"
+    if kind == "LOW":
+        parts = [f"{universe.PERIOD_LABEL[k]} {universe.pos_of(p, lo[k]) * 100:.0f}%" for k in ("q", "h", "y") if lo.get(k)]
+        key = next((k for k in ("q", "h", "y") if lo.get(k) and universe.pos_of(p, lo[k]) <= universe.ZONE), "q")
+        base = lo[key][0]
+        return (f"저점권 진입 · {head_line}\n{now_line}\n범위의 아래쪽: {' · '.join(parts)}\n"
+                f"{universe.PERIOD_LABEL[key]} 최저가 {fmt_price(base)}원보다 {fmt_pct(p / base - 1)}\n아직 반등 확인 전이에요")
+    if kind == "NEWLOW":
+        key = next((k for k in ("y", "h", "q", "m", "w") if lo.get(k) and lo[k][2] == 0), "w")
+        prev = coin.get("pl", {}).get(key)
+        extra = f" (이전 저점 {fmt_price(prev)}원)" if prev else ""
+        return (f"신저가 갱신 · {head_line}\n{now_line}\n{universe.PERIOD_LABEL[key]} 최저가를 새로 썼어요{extra}\n"
+                "더 내려갈 수 있어요. 반등이 확인되면 다시 알려 드려요.")
+    key = next((k for k in ("q", "h", "y") if lo.get(k) and 0 < lo[k][2] <= universe.REBOUND_DAYS), "q")
+    base = lo[key][0]
+    return (f"저점 반등 확인 · {head_line}\n{now_line}\n{universe.PERIOD_LABEL[key]} 저점 {fmt_price(base)}원에서 "
+            f"{fmt_pct(p / base - 1)} 반등\n3일 전보다 높아요")
+
+
 # ───────────────────────── 한 번 실행 ─────────────────────────
 def run_once(cfg, demo=False):
     cs.BUY_TH, cs.SELL_TH, cs.FEE = cfg["buy_threshold"], cfg["sell_threshold"], cfg["fee"]
@@ -368,6 +393,27 @@ def run_once(cfg, demo=False):
             else:
                 st["hit"].pop(mk, None)
 
+    # 빗썸 전체 코인 + 저점 판정 (관심 종목은 저점 알림도 보내요)
+    coins, stale = universe.build(cfg, st, demo)
+    cmap = {c["m"]: c for c in coins}
+    watch_set = {x["market"] for x in markets}
+    for c in coins:
+        c["w"] = 1 if c["m"] in watch_set else 0
+    ltags = st.setdefault("ltags", {})
+    low_first = not st.get("uinit")  # 처음 한 번은 현재 상태만 기록하고 알림은 건너뛰어요
+    st["uinit"] = True
+    kind_flag = {"LOW": "low_zone", "NEWLOW": "new_low", "REBOUND": "rebound"}
+    for m in markets:
+        c = cmap.get(m["market"])
+        if m["status"] != "ok" or not c:
+            continue
+        prev, cur = ltags.get(m["market"]), c["tag"]
+        if cur in kind_flag and prev != cur and not first and not low_first and a.get(kind_flag[cur], True):
+            if cooldown_ok(st, f"low:{m['market']}", now, a["cooldown_minutes"]):
+                add_alert(m, "low", msg_low(m, c, cur))
+                st["last"][f"low:{m['market']}"] = iso(now)
+        ltags[m["market"]] = cur
+
     # 모든 종목 실패 → 한 번 알려주기(6시간에 한 번)
     if markets and all(x["status"] == "error" for x in markets):
         if cooldown_ok(st, "err", now, 360):
@@ -391,12 +437,16 @@ def run_once(cfg, demo=False):
         lines = [f"{x['name']} {fmt_price(x['price'])}원 {x['signal']}" for x in markets if x["status"] == "ok"]
         tg_send("✅ 코인 신호판 연결 확인\n" + ("\n".join(lines) or "시세를 가져오지 못했어요") + tail)
 
+    for c in coins:  # 화면 데이터가 작아지도록 빈 값은 빼요
+        if not c.get("pl"):
+            c.pop("pl", None)
     data = {
         "updated": iso(now),
         "updated_kst": now.astimezone(KST).strftime("%Y-%m-%d %H:%M"),
         "exchange": cfg["exchange"], "unit": cfg["unit"],
         "thresholds": {"buy": cs.BUY_TH, "sell": cs.SELL_TH},
         "markets": markets,
+        "coins": coins, "stale": stale,
         "alerts": list(reversed(st["history"]))[:20],
     }
     publish(data)
@@ -429,6 +479,13 @@ def print_table(data):
               f"{m['signal']:<5} 점수 {m['score']:+d}  {pf_txt}")
 
 
+def print_universe(data):
+    coins = [c for c in data.get("coins", []) if c["ch"].get("m") is not None]
+    print(f"\n빗썸 원화마켓 {len(data.get('coins', []))}개 · 1개월 하락폭 상위 8")
+    for c in coins[:8]:
+        print(f"  {c['n']:<10} {fmt_price(c['p']):>12}원  1개월 {fmt_pct(c['ch']['m']):>8}  {c['tag']:<7} {c['tg']}")
+
+
 def main():
     ap = argparse.ArgumentParser(description="코인 신호 모니터")
     ap.add_argument("--demo", action="store_true", help="가짜 데이터로 시험")
@@ -437,7 +494,9 @@ def main():
     args = ap.parse_args()
     cfg = load_config(args.config)
     while True:
-        print_table(run_once(cfg, args.demo))
+        data = run_once(cfg, args.demo)
+        print_table(data)
+        print_universe(data)
         if not args.loop:
             break
         time.sleep(args.loop)
