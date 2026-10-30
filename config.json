@@ -31,5 +31,6 @@
       "stop": null
     }
   },
-  "min_trade_value_24h": 0
+  "min_trade_value_24h": 0,
+  "upbit": true
 }

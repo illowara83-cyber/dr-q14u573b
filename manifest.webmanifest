@@ -1,6 +1,6 @@
 {
-  "name": "그러다 고래된다",
-  "short_name": "그러다 고래된다",
+  "name": "Coin Time",
+  "short_name": "Coin Time",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

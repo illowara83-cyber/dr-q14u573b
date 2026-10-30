@@ -53,6 +53,7 @@ DEFAULTS = {
     "fee": 0.0025,
     "dashboard_url": "",
     "min_trade_value_24h": 0,
+    "upbit": True,
     "alerts": {"signal_change": True, "spike": True, "spike_pct": 5, "spike_minutes": 60,
                "targets": True, "low_zone": True, "new_low": True, "rebound": True,
                "cooldown_minutes": 180},
@@ -401,11 +402,11 @@ def run_once(cfg, demo=False):
 
     # 빗썸 전체 코인 + 저점 판정 (관심 종목은 저점 알림도 보내요)
     try:
-        coins, stale = universe.build(cfg, st, demo)
+        coins, stale = universe.build(cfg, st, demo, "bithumb", 80)
     except Exception as e:  # 전체 코인 처리에서 오류가 나도 관심 종목 알림은 계속 보내요
         import traceback
         traceback.print_exc()
-        coins, stale = st.get("last_coins", []), True
+        coins, stale = st.get("u", {}).get("bithumb", {}).get("last", []), True
         if cooldown_ok(st, "uerr", now, 360):
             alerts.append(f"⚠️ 전체 코인 처리 중 오류가 났어요 (이전 데이터를 보여 줘요)\n{describe_error(e)}")
             st["last"]["uerr"] = iso(now)
@@ -428,6 +429,19 @@ def run_once(cfg, demo=False):
                 st["last"][f"low:{m['market']}"] = iso(now)
         ltags[m["market"]] = cur
 
+    upbit = None
+    if cfg.get("upbit", True):
+        try:
+            ucoins, ustale = universe.build(cfg, st, demo, "upbit", 100)
+            upbit = {"updated": iso(now), "coins": ucoins, "stale": ustale}
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print("업비트 처리 오류:", describe_error(e))
+            ulast = st.get("u", {}).get("upbit", {}).get("last", [])
+            if ulast:
+                upbit = {"updated": iso(now), "coins": ulast, "stale": True}
+
     # 모든 종목 실패 → 한 번 알려주기(6시간에 한 번)
     if markets and all(x["status"] == "error" for x in markets):
         if cooldown_ok(st, "err", now, 360):
@@ -449,9 +463,9 @@ def run_once(cfg, demo=False):
             tg_send("\n\n".join(alerts[:8]) + tail)
     if os.environ.get("EVENT_NAME") == "workflow_dispatch":
         lines = [f"{x['name']} {fmt_price(x['price'])}원 {x['signal']}" for x in markets if x["status"] == "ok"]
-        tg_send("✅ 그러다 고래된다 연결 확인\n" + ("\n".join(lines) or "시세를 가져오지 못했어요") + tail)
+        tg_send("✅ Coin Time 연결 확인\n" + ("\n".join(lines) or "시세를 가져오지 못했어요") + tail)
 
-    for c in coins:  # 화면 데이터가 작아지도록 빈 값은 빼요
+    for c in coins + (upbit["coins"] if upbit else []):  # 화면 데이터가 작아지도록 빈 값은 빼요
         if not c.get("pl"):
             c.pop("pl", None)
     data = {
@@ -460,24 +474,27 @@ def run_once(cfg, demo=False):
         "exchange": cfg["exchange"], "unit": cfg["unit"],
         "thresholds": {"buy": cs.BUY_TH, "sell": cs.SELL_TH},
         "markets": markets,
-        "coins": coins, "stale": stale,
+        "coins": coins, "stale": stale, "exchanges": ["bithumb", "upbit"] if upbit else ["bithumb"],
         "alerts": list(reversed(st["history"]))[:20],
     }
-    publish(data)
+    publish(data, upbit)
     return data
 
 
-def publish(data):
+def publish(data, upbit=None):
     os.makedirs(SITE, exist_ok=True)
     if os.path.isdir(WEB):
         shutil.copytree(WEB, SITE, dirs_exist_ok=True)
     for f in ROOT_WEB_FILES:  # 저장소 맨 바깥에 올린 화면 파일도 사용 (새로 올린 것이 우선)
         if os.path.isfile(f):
             shutil.copy(f, os.path.join(SITE, f))
-    tmp = os.path.join(SITE, "data.json.tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False)
-    os.replace(tmp, os.path.join(SITE, "data.json"))
+    for name, obj in (("data.json", data), ("upbit.json", upbit)):
+        if obj is None:
+            continue
+        tmp = os.path.join(SITE, name + ".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(obj, f, ensure_ascii=False, separators=(",", ":"))
+        os.replace(tmp, os.path.join(SITE, name))
 
 
 def print_table(data):
@@ -513,7 +530,7 @@ def main():
         except Exception as e:
             import traceback
             traceback.print_exc()
-            tg_send("⚠️ 그러다 고래된다 프로그램 오류\n" + describe_error(e) + "\n이 메시지를 그대로 알려 주시면 고칠 수 있어요.")
+            tg_send("⚠️ Coin Time 프로그램 오류\n" + describe_error(e) + "\n이 메시지를 그대로 알려 주시면 고칠 수 있어요.")
             if not args.loop:
                 sys.exit(1)
             time.sleep(args.loop)

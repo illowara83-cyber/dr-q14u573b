@@ -19,7 +19,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<title>그러다 고래된다</title>
+<title>Coin Time</title>
 <style>
 :root{
   --bg:#ffffff; --fg:#09090b; --card:#ffffff; --muted:#f4f4f5; --mfg:#71717a; --bd:#e4e4e7; --ring:#a1a1aa;
@@ -85,7 +85,11 @@ svg.i{width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:2; s
 .search svg{position:absolute; left:12px; top:13px; color:var(--mfg)}
 .search input{width:100%; height:44px; border:1px solid var(--bd); border-radius:var(--radius); background:var(--card); padding:0 12px 0 38px}
 .search input::placeholder{color:var(--mfg)}
-.lbl{font-size:12px; color:var(--mfg); margin:0 2px 6px}
+.lbl{display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:12px; color:var(--mfg); margin:0 2px 6px}
+.flip{display:inline-flex; align-items:center; gap:6px; flex:none; height:34px; padding:0 11px; border:1px solid var(--bd); border-radius:8px; background:var(--card); color:var(--fg); font-size:13px}
+.flip:hover{background:var(--muted)}
+.flip[aria-pressed="true"]{border-color:var(--fg)}
+.flip svg.i{width:15px; height:15px}
 .seg{display:flex; gap:3px; padding:3px; background:var(--muted); border-radius:var(--radius); overflow-x:auto; scrollbar-width:none}
 .seg::-webkit-scrollbar{display:none}
 .seg button{flex:1 0 auto; min-width:48px; height:42px; padding:0 10px; border-radius:7px; font-size:13.5px; color:var(--mfg); white-space:nowrap}
@@ -197,7 +201,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
   <div id="listView">
     <div class="hdr">
       <div>
-        <h1>그러다 고래된다</h1>
+        <h1>Coin Time</h1>
         <div class="sub"><span class="dot" id="dot"></span><span id="sub">불러오는 중</span></div>
       </div>
       <div style="display:flex;gap:8px">
@@ -207,9 +211,11 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     </div>
     <div id="stale" class="alert" hidden></div>
 
+    <div class="seg" id="ex" role="group" aria-label="거래소" style="margin-bottom:12px"></div>
+
     <div class="search"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input id="q" type="search" placeholder="코인 이름이나 기호로 검색" autocomplete="off" aria-label="코인 검색"></div>
 
-    <div class="lbl">하락폭 순서 · 고른 기간에 많이 떨어진 코인부터</div>
+    <div class="lbl"><span id="lblTxt">하락폭 순서 · 고른 기간에 많이 떨어진 코인부터</span><button class="flip" id="flip" aria-pressed="false"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg>순서 뒤집기</button></div>
     <div class="seg" id="sort" role="group" aria-label="하락폭 기준 기간"></div>
 
     <div class="chips" id="chips" role="group" aria-label="필터"></div>
@@ -232,8 +238,10 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
 (function(){
   "use strict";
   var $ = function(i){ return document.getElementById(i) };
-  var DATA = null, WATCH = {}, curDetail = null, listY = 0;
-  var S = {sort:"m", filter:"ALL", view:"simple", q:"", shown:30};
+  var DATA = null, UP = null, WATCH = {}, curDetail = null, listY = 0, upLoading = false;
+  var S = {sort:"m", filter:"ALL", view:"simple", q:"", shown:30, ex:"bithumb", dir:1};
+  var EXN = {bithumb:"빗썸", upbit:"업비트"};
+  function cur(){ return S.ex === "upbit" ? UP : DATA }
   var SORTS = [["d","1일"],["w","1주"],["m","1개월"],["q","3개월"],["h","6개월"],["y","12개월"],["y2","24개월"]];
   var PERIODS = [["w","1주"],["m","1개월"],["q","3개월"],["h","6개월"],["y","12개월"],["a","역대"]];
   var TAGS = {NEWLOW:["신저가 갱신","am"], REBOUND:["저점 반등","gr"], LOW:["저점권","vi"], SHORT:["단기 저점","vo"], HIGH:["고점권","mu"], MID:["중간","mu"], NONE:["준비 중","mu"]};
@@ -284,7 +292,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
   }
   function tone(v){ return v == null ? "mu" : v >= 0 ? "up" : "down" }
 
-  function sigOf(c){ var w = WATCH[c.m]; return w && w.status === "ok" ? w.signal : null }
+  function sigOf(c){ if(S.ex === "upbit") return null; var w = WATCH[c.m]; return w && w.status === "ok" ? w.signal : null }
   function matches(c){
     if(S.q){
       var q = S.q.toLowerCase();
@@ -292,14 +300,17 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     }
     var f = S.filter;
     if(f === "ALL") return true;
-    if(f === "WATCH") return !!c.w;
+    if(f === "WATCH") return S.ex !== "upbit" && !!c.w;
     if(f === "BUY" || f === "SELL") return sigOf(c) === f;
     return c.tag === f;
+  }
+  function filters(){
+    return S.ex === "upbit" ? FILTERS.filter(function(f){ return ["ALL","LOW","NEWLOW","REBOUND"].indexOf(f[0]) >= 0 }) : FILTERS;
   }
   function counts(){
     var n = {};
     FILTERS.forEach(function(f){ n[f[0]] = 0 });
-    DATA.coins.forEach(function(c){
+    cur().coins.forEach(function(c){
       n.ALL++; if(c.w) n.WATCH++;
       var s = sigOf(c); if(s === "BUY") n.BUY++; if(s === "SELL") n.SELL++;
       if(n[c.tag] != null) n[c.tag]++;
@@ -308,12 +319,12 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
   }
   function sortedCoins(){
     var k = S.sort;
-    return DATA.coins.filter(matches).sort(function(a, b){
+    return cur().coins.filter(matches).sort(function(a, b){
       var va = a.ch[k], vb = b.ch[k];
       if(va == null && vb == null) return 0;
       if(va == null) return 1;
       if(vb == null) return -1;
-      return va - vb;
+      return (va - vb) * S.dir;
     });
   }
 
@@ -348,10 +359,10 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
   }
   function card(c){
     var b = el("button", "card");
-    b.onclick = function(){ location.hash = encodeURIComponent(c.s) };
+    b.onclick = function(){ location.hash = encodeURIComponent((S.ex === "upbit" ? "upbit-" : "") + c.s) };
     var top = el("div", "top"), l = el("div", "l"), nm = el("div", "nm", c.n);
     nm.appendChild(el("small", null, c.s));
-    if(c.w) nm.appendChild(el("span", "star", "관심"));
+    if(c.w && S.ex !== "upbit") nm.appendChild(el("span", "star", "관심"));
     l.appendChild(nm);
     var t = TAGS[c.tag] || TAGS.NONE, s = el("div", "s");
     s.appendChild(el("span", "bdg " + t[1], t[0])); s.appendChild(el("em", null, c.tg));
@@ -368,7 +379,15 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
 
   function renderList(){
     var n = counts(), box = $("chips"); box.textContent = "";
-    FILTERS.forEach(function(f){
+    var xb = $("ex"); xb.textContent = "";
+    [["bithumb","빗썸"],["upbit","업비트"]].forEach(function(x){
+      var b = el("button", null, x[1]); b.setAttribute("aria-pressed", S.ex === x[0] ? "true" : "false");
+      b.onclick = function(){ switchEx(x[0]) };
+      xb.appendChild(b);
+    });
+    $("lblTxt").textContent = S.dir === 1 ? "하락폭 순서 · 고른 기간에 많이 떨어진 코인부터" : "상승폭 순서 · 고른 기간에 많이 오른 코인부터";
+    $("flip").setAttribute("aria-pressed", S.dir === -1 ? "true" : "false");
+    filters().forEach(function(f){
       var b = el("button", "chip", f[1]); b.appendChild(el("b", "num", String(n[f[0]] || 0)));
       b.setAttribute("aria-pressed", S.filter === f[0] ? "true" : "false");
       b.onclick = function(){ S.filter = f[0]; S.shown = 30; renderList() };
@@ -400,16 +419,18 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     else DATA.alerts.forEach(function(a){
       var li = el("div", "li"); li.appendChild(el("time", "num", kst(a.t))); li.appendChild(document.createTextNode(a.text)); log.appendChild(li);
     });
-    $("foot").textContent = "빗썸 원화마켓 " + DATA.coins.length + "개 기준이에요. 하락폭과 변동률은 지금 가격을 각 기간 전 일봉 종가와 비교한 값이고, 1일은 최근 24시간 변동이에요. 저점 칩의 숫자는 그 기간 최저가보다 지금 가격이 몇 % 높은지예요. 1주~12개월은 최저가와 최고가 범위의 아래쪽 15% 안, 역대는 최저가보다 30% 이내일 때 저점 근처(보라색)로 봐요. 역대는 빗썸이 주는 일봉 전체 기준이고 상장 90일 미만은 판정하지 않아요. 참고용 정보이며 수익을 보장하지 않아요. 상승은 빨강, 하락은 파랑으로 표시해요.";
+    var exn = EXN[S.ex];
+    $("foot").textContent = exn + " 원화마켓 " + cur().coins.length + "개 기준이에요. 하락폭과 변동률은 지금 가격을 각 기간 전 일봉 종가와 비교한 값이고, 1일은 " + (S.ex === "upbit" ? "전일 종가(오전 9시) 대비 변동" : "최근 24시간 변동") + "이에요. 저점 칩의 숫자는 그 기간 최저가보다 지금 가격이 몇 % 높은지예요. 1주~12개월은 최저가와 최고가 범위의 아래쪽 15% 안, 역대는 최저가보다 30% 이내일 때 저점 근처(보라색)로 봐요. 역대는 " + exn + "이 주는 일봉 전체 기준이고 상장 90일 미만은 판정하지 않아요." + (S.ex === "upbit" ? " 업비트 화면은 시세와 저점 판단만 보여 줘요. 관심 종목, 매수·매도 신호, 텔레그램 알림은 빗썸 기준이에요." : "") + " 참고용 정보이며 수익을 보장하지 않아요. 상승은 빨강, 하락은 파랑으로 표시해요.";
   }
 
   function tick(){
-    if(!DATA) return;
-    var min = (Date.now() - new Date(DATA.updated).getTime()) / 60000;
-    $("sub").textContent = "빗썸 원화마켓 " + DATA.coins.length + "개 · " + ago(DATA.updated) + " 업데이트";
+    var D = cur();
+    if(!D) return;
+    var min = (Date.now() - new Date(D.updated).getTime()) / 60000;
+    $("sub").textContent = EXN[S.ex] + " 원화마켓 " + D.coins.length + "개 · " + ago(D.updated) + " 업데이트";
     $("dot").className = "dot " + (min < 25 ? "ok" : min < 60 ? "old" : "bad");
     var st = $("stale");
-    if(DATA.stale){ st.hidden = false; st.textContent = "전체 시세를 새로 받지 못해 이전 데이터를 보여 주고 있어요." }
+    if(D.stale){ st.hidden = false; st.textContent = "전체 시세를 새로 받지 못해 이전 데이터를 보여 주고 있어요." }
     else if(min >= 60){ st.hidden = false; st.textContent = "한 시간 넘게 업데이트가 없어요. GitHub의 Actions 탭에서 자동 실행이 멈춰 있지 않은지 확인해 주세요." }
     else st.hidden = true;
   }
@@ -424,14 +445,14 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     var y = window.scrollY, age = c.age || 0;
     $("listView").hidden = true;
     var v = $("detailView"); v.hidden = false; v.textContent = "";
-    var w = WATCH[c.m];
+    var w = S.ex === "upbit" ? null : WATCH[c.m];
 
     var back = el("button", "back"); back.innerHTML = '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>';
     back.appendChild(document.createTextNode("목록으로")); back.onclick = function(){ location.hash = "" };
     v.appendChild(back);
 
     var dh = el("div", "dh"), l = el("div"), h1 = el("h1", null, c.n); h1.appendChild(el("small", null, c.s));
-    l.appendChild(h1); l.appendChild(el("div", "mu", "빗썸 원화마켓")); l.lastChild.style.fontSize = "12px";
+    l.appendChild(h1); l.appendChild(el("div", "mu", EXN[S.ex] + " 원화마켓")); l.lastChild.style.fontSize = "12px";
     var rr = el("div"), big = el("div", "big num", fmtPrice(c.p)); big.appendChild(el("small", null, " 원"));
     rr.appendChild(big);
     var d1 = c.ch.d, dd = el("div", "num " + tone(d1), "1일 " + (d1 == null ? "-" : fmtPct(d1))); dd.style.cssText = "font-size:13.5px;font-weight:600;text-align:right";
@@ -482,9 +503,14 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
       if(w.target || w.stop) card3.appendChild(kv("목표가 · 손절가", el("span", "num", (w.target ? fmtPrice(w.target) : "-") + " · " + (w.stop ? fmtPrice(w.stop) : "-"))));
       card3.appendChild(el("p", "note", "관심 종목이라 저점권 진입, 신저가, 반등 확인 때 텔레그램으로 알려 드려요."));
     } else {
-      var p = el("p", "note", "관심 종목이 아니라 텔레그램 알림은 오지 않아요. 알림을 받으려면 저장소의 ");
-      p.appendChild(el("code", null, "config.json")); p.appendChild(document.createTextNode("에서 markets에 "));
-      p.appendChild(el("code", null, '"' + c.m + '"')); p.appendChild(document.createTextNode("을 추가해 주세요."));
+      var p;
+      if(S.ex === "upbit"){
+        p = el("p", "note", "업비트 화면은 시세와 저점 판단만 보여 줘요. 매수·매도 신호와 텔레그램 알림은 빗썸 관심 종목 기준이에요.");
+      } else {
+        p = el("p", "note", "관심 종목이 아니라 텔레그램 알림은 오지 않아요. 알림을 받으려면 저장소의 ");
+        p.appendChild(el("code", null, "config.json")); p.appendChild(document.createTextNode("에서 markets에 "));
+        p.appendChild(el("code", null, '"' + c.m + '"')); p.appendChild(document.createTextNode("을 추가해 주세요."));
+      }
       p.style.marginTop = "0"; card3.appendChild(p);
     }
     s3.appendChild(card3); v.appendChild(s3);
@@ -496,7 +522,12 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
   function route(){
     if(!DATA) return;
     var h = decodeURIComponent(location.hash.replace(/^#/, "")), c = null;
-    if(h) DATA.coins.forEach(function(x){ if(x.s === h) c = x });
+    if(h.indexOf("upbit-") === 0){
+      h = h.slice(6);
+      if(S.ex !== "upbit"){ S.ex = "upbit"; S.shown = 30; if(S.filter !== "ALL" && !filters().some(function(f){ return f[0] === S.filter })) S.filter = "ALL" }
+    }
+    if(S.ex === "upbit" && !UP){ loadUp(); return }
+    if(h) cur().coins.forEach(function(x){ if(x.s === h) c = x });
     if(c){
       if(!$("listView").hidden) listY = window.scrollY;
       var same = curDetail === c.s; curDetail = c.s; showDetail(c, same);
@@ -514,6 +545,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
         if(!d.coins || !d.coins.length) throw new Error("empty");
         DATA = d; WATCH = {};
         (d.markets || []).forEach(function(m){ WATCH[m.market] = m });
+        if(UP || S.ex === "upbit") loadUp(true);
         route();
       })
       .catch(function(){
@@ -522,6 +554,33 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
           var l = $("list"); l.textContent = ""; l.appendChild(el("div", "empty", "첫 자동 실행이 끝나면 여기에 나타나요. (설정 후 최대 10~15분)"));
         }
       });
+  }
+
+  function loadUp(quiet){
+    if(upLoading) return;
+    upLoading = true;
+    fetch("upbit.json?t=" + Date.now(), {cache:"no-store"})
+      .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json() })
+      .then(function(d){ if(!d.coins || !d.coins.length) throw new Error("empty"); UP = d; upLoading = false; route() })
+      .catch(function(){
+        upLoading = false;
+        if(!quiet && S.ex === "upbit" && !UP){
+          $("sub").textContent = "업비트 데이터를 준비 중이에요"; $("dot").className = "dot old";
+          var l = $("list"); l.textContent = ""; l.appendChild(el("div", "empty", "업비트 데이터는 첫 자동 실행이 끝나면 나타나요. 처음에는 몇 번의 실행(10~30분)이 걸릴 수 있어요."));
+          $("more").hidden = true;
+        }
+      });
+  }
+  function switchEx(x){
+    if(S.ex === x) return;
+    S.ex = x; S.shown = 30;
+    if(!filters().some(function(f){ return f[0] === S.filter })) S.filter = "ALL";
+    if(x === "upbit" && !UP){
+      $("ex").querySelectorAll("button").forEach(function(b, i){ b.setAttribute("aria-pressed", i === 1 ? "true" : "false") });
+      var l = $("list"); l.textContent = ""; for(var i = 0; i < 4; i++) l.appendChild(el("div", "sk"));
+      $("more").hidden = true; loadUp(); return;
+    }
+    location.hash = ""; renderList(); tick();
   }
 
   var THEMES = [["dark","어둡게"],["light","밝게"],["auto","자동"]];
@@ -542,6 +601,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     var l = $("list"); for(var i = 0; i < 4; i++) l.appendChild(el("div", "sk"));
     $("q").addEventListener("input", function(){ S.q = this.value.trim(); S.shown = 30; if(DATA) renderList() });
     $("more").onclick = function(){ S.shown += 30; renderList() };
+    $("flip").onclick = function(){ S.dir = -S.dir; S.shown = 30; if(cur()) renderList() };
     $("rf").onclick = load;
     window.addEventListener("hashchange", route);
     document.addEventListener("visibilitychange", function(){ if(!document.hidden) load() });
