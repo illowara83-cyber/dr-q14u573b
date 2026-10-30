@@ -38,7 +38,7 @@
   ],
   "telegram": {
     "digest": true,
-    "digest_size": 5,
+    "digest_size": 20,
     "digest_start": 7,
     "digest_every_hours": 6,
     "quiet_from": 22,

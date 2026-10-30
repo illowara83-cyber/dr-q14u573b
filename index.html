@@ -522,8 +522,9 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
       head.appendChild(el("span", "mu", sortLabel(CP) + " 변동"));
       head.appendChild(el("b", "num " + tone(ch), ch == null ? "-" : fmtPct(ch)));
       if(data === undefined){ box.appendChild(el("div", "sk")); return }
-      var vals = data && data[CP];
-      if(!vals || vals.length < 2){ box.appendChild(el("div", "empty", "이 기간의 차트 데이터가 아직 없어요. 상장한 지 얼마 안 됐거나 데이터를 모으는 중이에요.")); return }
+      if(data === null){ box.appendChild(el("div", "empty", "이 코인의 차트 데이터를 아직 만들지 못했어요. 자동 실행이 한두 번 더 돌면 나타나요(보통 10~30분).")); return }
+      var vals = data[CP];
+      if(!vals || vals.length < 2){ box.appendChild(el("div", "empty", "이 기간의 데이터가 아직 없어요. 상장한 지 얼마 안 됐거나 시간별 가격을 모으는 중이에요.")); return }
       drawLine(box, info, vals, CP);
     }
     tabsRender(); draw();

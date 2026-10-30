@@ -263,6 +263,8 @@ def make_stats(rows, today, ext=None, hourly=None, prev=None):
         st["hp"], st["hts"] = [sig5(x) for x in hourly[-HOURS:]], time.time()
     elif prev and prev.get("hp"):
         st["hp"], st["hts"] = prev["hp"], prev.get("hts", 0)
+    else:
+        st["hfail"] = today   # 시간봉을 못 받았어요(오늘은 다시 시도하지 않아요)
     for key, k in CLOSE_REFS:
         if n > k:
             st["close"][key] = rows[-1 - k][4]
@@ -289,7 +291,9 @@ def make_stats(rows, today, ext=None, hourly=None, prev=None):
 
 def append_hourly(stat, p, now_ts):
     """10분마다 도는 동안 한 시간에 한 번씩 현재가를 덧붙여서 1일·1주 차트를 이어 가요"""
-    hp = stat.setdefault("hp", [])
+    hp = stat.get("hp")
+    if hp is None:
+        return
     if now_ts - stat.get("hts", 0) >= 3000:
         hp.append(sig5(p))
         stat["hts"] = now_ts
@@ -416,7 +420,9 @@ def build(cfg, st, demo=False, ex="bithumb", budget=100):
 
     min_v = cfg.get("min_trade_value_24h", 0) or 0
     syms = [s for s, t in tick.items() if t["v"] >= min_v]
-    todo = [s for s in syms if (ust.get(s) or {}).get("date") != today or "a" not in (ust.get(s) or {}).get("low", {})]
+    todo = [s for s in syms if _needs_refresh(ust.get(s), today)]
+    first = {m.split("-", 1)[-1] for m in (cfg.get("pin") or []) + (cfg.get("markets") or [])}
+    todo.sort(key=lambda x: (x not in first,))   # 관심 종목을 먼저 받아서 차트가 빨리 나오게 해요
 
     if demo:
         fetch = lambda s: (demo_series(s), None, demo_hourly(s))
@@ -454,6 +460,17 @@ def build(cfg, st, demo=False, ex="bithumb", budget=100):
     coins.sort(key=lambda c: (c["ch"].get("m") is None, c["ch"].get("m") or 0))
     U["last"] = coins
     return coins, False
+
+
+def _needs_refresh(stat, today):
+    """오늘 일봉을 아직 못 받았거나, 역대·차트용 데이터가 빠진 코인은 다시 받아요"""
+    if not stat or stat.get("date") != today:
+        return True
+    if "a" not in stat.get("low", {}) or "ser" not in stat:
+        return True
+    if "hp" not in stat and stat.get("hfail") != today:   # 시간봉을 못 받은 코인도 하루 한 번은 다시 시도
+        return True
+    return False
 
 
 def _safe(fn, s):

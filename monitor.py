@@ -55,7 +55,7 @@ DEFAULTS = {
     "min_trade_value_24h": 0,
     "upbit": True,
     "pin": ["KRW-PCI"],
-    "telegram": {"digest": True, "digest_size": 5, "digest_start": 7, "digest_every_hours": 6,
+    "telegram": {"digest": True, "digest_size": 20, "digest_start": 7, "digest_every_hours": 6,
                  "quiet_from": 22, "quiet_to": 7, "instant_alerts": False},
     "alerts": {"signal_change": True, "spike": True, "spike_pct": 5, "spike_minutes": 60,
                "targets": True, "low_zone": True, "new_low": True, "rebound": True,
@@ -379,20 +379,30 @@ def due_digest(tc, now, st, window_min=120):
     return None
 
 
-def msg_digest(coins, n, now, url):
+def msg_digest(coins, n, now, url, limit=3800):
+    """기간별 하락 TOP n. 텔레그램은 한 메시지가 4096자까지라서 길면 여러 개로 나눠요."""
     k = now.astimezone(KST)
-    lines = [f"Coin Time · 하락폭 TOP {n} (빗썸 · {k.month}/{k.day} {k.hour:02d}:{k.minute:02d})"]
+    title = f"Coin Time · 하락폭 TOP {n} (빗썸 · {k.month}/{k.day} {k.hour:02d}:{k.minute:02d})"
+    sections = []
     for key, label in PERIOD_NAMES:
         rows = sorted([c for c in coins if c["ch"].get(key) is not None], key=lambda c: c["ch"][key])[:n]
-        lines += ["", f"[{label}]"]
+        lines = [f"[{label}]"]
         if not rows:
             lines.append("데이터가 아직 없어요")
         for i, c in enumerate(rows, 1):
             tag = f" · {TAG_SHORT[c['tag']]}" if c.get("tag") in TAG_SHORT else ""
             lines.append(f"{i}. {c['n']} {fmt_pct(c['ch'][key])} · {fmt_price(c['p'])}원{tag}")
+        sections.append("\n".join(lines))
+    msgs, cur = [], title
+    for sec in sections:
+        if len(cur) + len(sec) + 2 > limit and cur != title:
+            msgs.append(cur)
+            cur = f"{title} - 이어서"
+        cur += "\n\n" + sec
+    msgs.append(cur)
     if url:
-        lines += ["", f"📊 {url}"]
-    return "\n".join(lines)
+        msgs[-1] += f"\n\n📊 {url}"
+    return msgs
 
 
 # ───────────────────────── 한 번 실행 ─────────────────────────
@@ -520,7 +530,11 @@ def run_once(cfg, demo=False):
             tg_send("\n\n".join(alerts[:8]) + tail)
     sid = due_digest(tc, now, st)
     if (sid or manual) and coins and not stale:
-        sent = tg_send(msg_digest(coins, tc["digest_size"], now, url))
+        sent = True
+        for i, text in enumerate(msg_digest(coins, tc["digest_size"], now, url)):
+            if i:
+                time.sleep(1.2)   # 텔레그램은 같은 대화에 1초에 한 번 정도만 받아 줘요
+            sent = tg_send(text) and sent
         if sid and (sent or not os.environ.get("TELEGRAM_TOKEN")):
             st["digest_last"] = sid   # 전송에 실패하면 표시하지 않아서 다음 실행에서 다시 시도해요
     if manual:
