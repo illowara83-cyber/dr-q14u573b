@@ -34,6 +34,24 @@ UPBIT_THROTTLE = 0.25  # 업비트 요청 사이 쉬는 시간(초) - 요청 제
 HOURS = 169            # 시간봉 보관 개수: 지금 + 7일(168시간)
 
 
+_RUN = {"deadline": 0.0, "fails": 0}   # 이번 실행에서 쓸 수 있는 시간 / 연속 실패 횟수
+
+
+def _get(url):
+    """시간이 다 됐거나 서버가 계속 실패하면 새 요청을 시작하지 않아요"""
+    if _RUN["deadline"] and time.time() > _RUN["deadline"]:
+        raise TimeoutError("이번 실행에서 쓸 시간이 다 됐어요")
+    if _RUN["fails"] >= 12:
+        raise TimeoutError("서버가 계속 거절해서 이번 실행은 여기서 멈춰요")
+    try:
+        r = cs.http_json(url, 2)
+        _RUN["fails"] = 0
+        return r
+    except Exception:
+        _RUN["fails"] += 1
+        raise
+
+
 # ───────────────────────── 유틸 ─────────────────────────
 def sig(x):
     return float(f"{x:.6g}")
@@ -67,7 +85,7 @@ def in_zone(key, p, lo, age=9999):
 
 # ───────────────────────── 빗썸 API ─────────────────────────
 def bithumb_tickers():
-    js = cs.http_json(f"{BASES['bithumb']}/public/ticker/ALL_KRW")
+    js = _get(f"{BASES['bithumb']}/public/ticker/ALL_KRW")
     if js.get("status") != "0000":
         raise RuntimeError(f"빗썸 응답 오류: {str(js)[:120]}")
     out = {}
@@ -87,9 +105,33 @@ def bithumb_tickers():
     return out
 
 
+def _is_caution(r):
+    """투자유의종목인가 (빗썸: market_warning, 업비트: market_event.warning)"""
+    ev = r.get("market_event") or {}
+    return r.get("market_warning") == "CAUTION" or ev.get("warning") is True
+
+
+def market_info(ex):
+    """(한글 이름 {기호: 이름}, 투자유의 기호 집합)"""
+    url = f"{BASES[ex]}/v1/market/all?isDetails=true" + ("&is_details=true" if ex == "upbit" else "")
+    rows = _get(url)
+    names, caution = {}, set()
+    for r in rows:
+        m = str(r.get("market", ""))
+        if not m.startswith("KRW-"):
+            continue
+        sym = m.split("-", 1)[1]
+        names[sym] = r.get("korean_name") or sym
+        if _is_caution(r):
+            caution.add(sym)
+    if not names:
+        raise RuntimeError("종목 정보가 비어 있어요")
+    return names, caution
+
+
 def bithumb_names():
     try:
-        rows = cs.http_json(f"{BASES['bithumb']}/v1/market/all?isDetails=false")
+        rows = _get(f"{BASES['bithumb']}/v1/market/all?isDetails=false")
         return {r["market"].split("-", 1)[1]: r.get("korean_name") or r["market"].split("-", 1)[1]
                 for r in rows if str(r.get("market", "")).startswith("KRW-")}
     except Exception as e:
@@ -99,7 +141,7 @@ def bithumb_names():
 
 def bithumb_rows(sym, prev):
     """[(날짜, 시가, 고가, 저가, 종가)] 오래된 것부터. 빗썸은 일봉 전체를 한 번에 줘요."""
-    js = cs.http_json(f"{BASES['bithumb']}/public/candlestick/{sym}_KRW/24h")
+    js = _get(f"{BASES['bithumb']}/public/candlestick/{sym}_KRW/24h")
     if js.get("status") != "0000":
         raise RuntimeError(f"{sym} 일봉 오류")
     rows = []
@@ -111,7 +153,7 @@ def bithumb_rows(sym, prev):
     rows.sort(key=lambda x: x[0])
     hourly = None
     try:  # 1일·1주 차트용 시간봉 (실패해도 괜찮아요)
-        h = cs.http_json(f"{BASES['bithumb']}/public/candlestick/{sym}_KRW/1h")
+        h = _get(f"{BASES['bithumb']}/public/candlestick/{sym}_KRW/1h")
         if h.get("status") == "0000" and h.get("data"):
             hourly = [float(x[2]) for x in sorted(h["data"], key=lambda x: int(x[0]))][-HOURS:]
     except Exception:
@@ -121,12 +163,12 @@ def bithumb_rows(sym, prev):
 
 # ───────────────────────── 업비트 API ─────────────────────────
 def upbit_tickers():
-    markets = cs.http_json(f"{BASES['upbit']}/v1/market/all?isDetails=false")
+    markets = _get(f"{BASES['upbit']}/v1/market/all?isDetails=false")
     krw = [m["market"] for m in markets if str(m.get("market", "")).startswith("KRW-")]
     out = {}
     for i in range(0, len(krw), 40):
         chunk = krw[i:i + 40]
-        rows = cs.http_json(f"{BASES['upbit']}/v1/ticker?markets=" + ",".join(chunk))
+        rows = _get(f"{BASES['upbit']}/v1/ticker?markets=" + ",".join(chunk))
         for r in rows:
             try:
                 p = float(r["trade_price"])
@@ -144,7 +186,7 @@ def upbit_tickers():
 
 def upbit_names():
     try:
-        rows = cs.http_json(f"{BASES['upbit']}/v1/market/all?isDetails=false")
+        rows = _get(f"{BASES['upbit']}/v1/market/all?isDetails=false")
         return {r["market"].split("-", 1)[1]: r.get("korean_name") or r["market"].split("-", 1)[1]
                 for r in rows if str(r.get("market", "")).startswith("KRW-")}
     except Exception as e:
@@ -161,7 +203,7 @@ def upbit_rows(sym, prev, total=800):
         q = {"market": "KRW-" + sym, "count": n}
         if to:
             q["to"] = to
-        page = cs.http_json(f"{base}/v1/candles/days?" + urllib.parse.urlencode(q))
+        page = _get(f"{base}/v1/candles/days?" + urllib.parse.urlencode(q))
         time.sleep(UPBIT_THROTTLE)
         if not page:
             break
@@ -182,7 +224,7 @@ def upbit_rows(sym, prev, total=800):
     ext = (prev or {}).get("ext")
     if not ext:  # 처음 한 번: 월봉으로 역대 최저·최고 (실패해도 일봉만으로 계속하고 다음 날 다시 시도해요)
         try:
-            months = cs.http_json(f"{base}/v1/candles/months?market=KRW-{sym}&count=200")
+            months = _get(f"{base}/v1/candles/months?market=KRW-{sym}&count=200")
         except Exception as e:
             print(f"{sym}: 월봉 실패 {str(e)[:50]}")
             months = None
@@ -194,7 +236,7 @@ def upbit_rows(sym, prev, total=800):
                    "high": [float(hi["high_price"]), hi["candle_date_time_kst"][:10]]}
     hourly = None
     try:  # 1일·1주 차트용 시간봉 (실패해도 괜찮아요)
-        hp = cs.http_json(f"{base}/v1/candles/minutes/60?market=KRW-{sym}&count=200")
+        hp = _get(f"{base}/v1/candles/minutes/60?market=KRW-{sym}&count=200")
         time.sleep(UPBIT_THROTTLE)
         if hp:
             hourly = [float(x["trade_price"]) for x in sorted(hp, key=lambda x: x["candle_date_time_utc"])][-HOURS:]
@@ -209,6 +251,7 @@ DEMO_SYMBOLS = ["BTC", "ETH", "XRP", "SOL", "DOGE", "PCI", "ADA", "AVAX", "DOT",
                 "AAA", "BBB", "CCC", "DDD", "EEE", "FFF", "GGG", "HHH", "III", "JJJ", "KKK", "LLL", "MMM", "NNN",
                 "NEWA", "NEWB"]
 DEMO_SHORT = {"NEWA": 60, "NEWB": 200}   # 상장한 지 얼마 안 된 코인
+DEMO_CAUTION = {"AAA", "NEWB", "PCI", "ETC"}   # 시험용 투자유의 코인
 DEMO_UPBIT = DEMO_SYMBOLS[:5] + DEMO_SYMBOLS[6:30]   # 업비트에는 페이코인이 없어요
 
 
@@ -355,11 +398,13 @@ def judge(p, coin):
     return "MID", "저점과 고점 사이"
 
 
-def build_coin(ex, sym, name, tk, stat, today):
+def build_coin(ex, sym, name, tk, stat, today, caution=False):
     p = tk["p"]
     coin = {"m": "KRW-" + sym, "n": name, "s": sym, "p": sig(p), "v": round(tk["v"]),
             "ch": {"d": round(tk["d"], 5)}, "lo": {}, "pl": {}, "tag": "NONE", "tg": "데이터 준비 중",
             "age": (stat or {}).get("n", 0)}
+    if caution:
+        coin["cau"] = 1
     if not stat:
         return coin
     for key, _ in CLOSE_REFS:
@@ -402,6 +447,7 @@ def build(cfg, st, demo=False, ex="bithumb", budget=100):
     today = today_kst()
     U = _state(st, ex)
     ust = U["stats"]
+    _RUN["deadline"], _RUN["fails"] = 0.0, 0
     try:
         if demo:
             tick = demo_tickers(ex)
@@ -412,11 +458,18 @@ def build(cfg, st, demo=False, ex="bithumb", budget=100):
         return U.get("last", []), True
 
     nm = U.get("names") or {}
-    if not (nm.get("date") == today and nm.get("map")):
-        m = {s: f"데모{s}" for s in demo_symbols(ex)} if demo else (bithumb_names() if ex == "bithumb" else upbit_names())
-        if m:
-            U["names"] = nm = {"date": today, "map": m}
+    try:
+        if demo:
+            names_new, caution = {s: f"데모{s}" for s in demo_symbols(ex)}, set(DEMO_CAUTION)
+        else:
+            names_new, caution = market_info(ex)
+        U["names"] = nm = {"date": today, "map": names_new}
+        U["cau"] = sorted(caution)
+    except Exception as e:   # 실패하면 지난번 값을 그대로 써요
+        print(f"{EX_NAME[ex]} 종목 정보(이름·투자유의)를 받지 못했어요:", str(e)[:60])
+        caution = set(U.get("cau", []))
     names = nm.get("map", {})
+    cau_set = caution
 
     min_v = cfg.get("min_trade_value_24h", 0) or 0
     syms = [s for s, t in tick.items() if t["v"] >= min_v]
@@ -432,6 +485,7 @@ def build(cfg, st, demo=False, ex="bithumb", budget=100):
         fetch = lambda s: upbit_rows(s, ust.get(s))
     workers, batch_n = (8, 40) if ex == "bithumb" else (3, 12)
     deadline = time.time() + budget
+    _RUN["deadline"], _RUN["fails"] = deadline, 0
     done = 0
     for i in range(0, len(todo), batch_n):
         if time.time() > deadline:
@@ -447,13 +501,13 @@ def build(cfg, st, demo=False, ex="bithumb", budget=100):
                     ust[s] = stat
                     done += 1
     if todo:
-        print(f"{EX_NAME[ex]} 일봉 갱신: {done}/{len(todo)}개")
+        print(f"{EX_NAME[ex]} 일봉 갱신: {done}/{len(todo)}개" + (f" (나머지 {len(todo) - done}개는 다음 실행에서 이어서 받아요)" if done < len(todo) else ""))
 
     now_ts = time.time()
     for s in syms:
         if ust.get(s):
             append_hourly(ust[s], tick[s]["p"], now_ts)
-    coins = [build_coin(ex, s, names.get(s, s), tick[s], ust.get(s), today) for s in syms]
+    coins = [build_coin(ex, s, names.get(s, s), tick[s], ust.get(s), today, s in cau_set) for s in syms]
     for s in list(ust):  # 상장폐지된 코인 정리
         if s not in tick:
             ust.pop(s, None)
@@ -476,6 +530,8 @@ def _needs_refresh(stat, today):
 def _safe(fn, s):
     try:
         return fn(s)
+    except TimeoutError:   # 시간이 다 됐거나 서버가 계속 거절하는 중이라 건너뛰어요(로그는 한 번만 남겨요)
+        return None
     except Exception as e:
         print(f"{s}: 일봉 실패 {str(e)[:60]}")
         return None

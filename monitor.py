@@ -55,6 +55,7 @@ DEFAULTS = {
     "dashboard_url": "",
     "min_trade_value_24h": 0,
     "upbit": True,
+    "markets_upbit": [],
     "pin": ["KRW-PCI"],
     "news": {"enabled": True, "every_minutes": 10, "max_items": 120, "max_age_hours": 72,
              "topics": [["시장", "코인 시세"], ["비트코인", "비트코인"], ["이더리움", "이더리움"], ["리플", "리플 XRP"],
@@ -62,7 +63,8 @@ DEFAULTS = {
                         ["빗썸", "빗썸"], ["업비트", "업비트"], ["상장·상폐", "코인 상장 폐지"],
                         ["규제·정책", "가상자산 규제"], ["스테이블코인", "스테이블코인"]]},
     "telegram": {"digest": True, "digest_size": 20, "digest_start": 7, "digest_every_hours": 6,
-                 "quiet_from": 22, "quiet_to": 7, "instant_alerts": False},
+                 "quiet_from": 22, "quiet_to": 7, "instant_alerts": False,
+                 "caution_scope": "watch"},   # watch: 설정 파일의 관심 종목만, all: 전체 코인의 투자유의 변화
     "alerts": {"signal_change": True, "spike": True, "spike_pct": 5, "spike_minutes": 60,
                "targets": True, "low_zone": True, "new_low": True, "rebound": True,
                "cooldown_minutes": 180},
@@ -512,6 +514,10 @@ def run_once(cfg, demo=False):
     if cfg.get("upbit", True):
         try:
             ucoins, ustale = universe.build(cfg, st, demo, "upbit", 60)
+            uwl = set(cfg.get("markets_upbit") or [])
+            for c in ucoins:
+                if c["m"] in uwl:
+                    c["w"] = 1
             upbit = {"updated": iso(now), "coins": ucoins, "stale": ustale}
         except Exception as e:
             import traceback
@@ -520,6 +526,44 @@ def run_once(cfg, demo=False):
             ulast = st.get("u", {}).get("upbit", {}).get("last", [])
             if ulast:
                 upbit = {"updated": iso(now), "coins": ulast, "stale": True}
+
+    cau_msgs = []
+    cstate = st.get("cau_set")
+    if not isinstance(cstate, dict):
+        cstate = {"bithumb": cstate} if isinstance(cstate, list) else {}
+    st["cau_set"] = cstate
+
+    def check_caution(ex, coinlist, is_stale, watch):
+        now_set = {c["m"] for c in coinlist if c.get("cau")}
+        prev = cstate.get(ex)
+        if is_stale or not coinlist:
+            return
+        cstate[ex] = sorted(now_set)
+        if prev is None:   # 처음 한 번은 현재 상태만 기록해요
+            return
+        byk = {c["m"]: c for c in coinlist}
+        targets = list(byk) if (cfg.get("telegram") or {}).get("caution_scope") == "all" else watch
+        for mk in targets:
+            c = byk.get(mk)
+            if not c:
+                continue
+            exn = universe.EX_NAME[ex]
+            if mk in now_set and mk not in prev:
+                text = (f"⚠️ 투자유의 지정 · {c['n']} ({exn} {mk})\n현재가 {fmt_price(c['p'])}원\n"
+                        f"{exn}이 투자유의종목으로 지정했어요. 지정 사유와 거래지원 종료 여부는 거래소 공지에서 확인해 주세요.")
+            elif mk not in now_set and mk in prev:
+                text = f"✅ 투자유의 해제 · {c['n']} ({exn} {mk})\n현재가 {fmt_price(c['p'])}원\n{exn}이 투자유의종목 지정을 해제했어요."
+            else:
+                continue
+            cau_msgs.append(text)
+            st["history"].append({"t": iso(now), "market": mk, "name": c["n"], "kind": "caution", "text": text})
+
+    check_caution("bithumb", coins, stale, cfg.get("markets") or [])
+    if upbit:
+        check_caution("upbit", upbit["coins"], upbit.get("stale"), cfg.get("markets_upbit") or [])
+    if len(cau_msgs) > 5:   # 한꺼번에 많이 바뀌면 한 메시지로 묶어요
+        heads = [m.split("\n")[0] for m in cau_msgs]
+        cau_msgs[:] = ["⚠️ 투자유의 지정·해제 " + str(len(heads)) + "건\n" + "\n".join(heads[:30])]
 
     newsdata = None
     try:
@@ -550,6 +594,13 @@ def run_once(cfg, demo=False):
                 tg_send(t + tail)
         else:
             tg_send("\n\n".join(alerts[:8]) + tail)
+    pend = st.get("pending") or []
+    if quiet:
+        st["pending"] = (pend + cau_msgs)[-20:]
+    else:
+        for t in pend + cau_msgs:
+            tg_send(t + tail)
+        st["pending"] = []
     sid = due_digest(tc, now, st)
     if (sid or manual) and coins and not stale:
         sent = True
@@ -571,7 +622,7 @@ def run_once(cfg, demo=False):
         "updated_kst": now.astimezone(KST).strftime("%Y-%m-%d %H:%M"),
         "exchange": cfg["exchange"], "unit": cfg["unit"],
         "thresholds": {"buy": cs.BUY_TH, "sell": cs.SELL_TH},
-        "markets": markets,
+        "markets": markets, "watch": list(cfg.get("markets") or []), "watch_upbit": list(cfg.get("markets_upbit") or []),
         "coins": coins, "stale": stale, "exchanges": ["bithumb", "upbit"] if upbit else ["bithumb"],
         "alerts": list(reversed(st["history"]))[:20],
     }

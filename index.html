@@ -170,6 +170,30 @@ a.nwc:hover{background:var(--muted)}
 .nnew{color:var(--gr); font-weight:600}
 .linkbtn{display:flex; align-items:center; justify-content:center; gap:8px; height:46px; border:1px solid var(--bd); border-radius:var(--radius); background:var(--card); color:var(--fg); text-decoration:none; font-weight:500; font-size:14px; margin-bottom:16px}
 .linkbtn:hover{background:var(--muted)}
+.cau{font-size:11.5px; font-weight:600; background:var(--am); color:var(--bg); border-radius:4px; padding:0 6px; margin-left:6px; vertical-align:2px}
+.wp{display:flex; flex-direction:column; gap:10px; margin-top:12px}
+.wp .wtop b{font-size:15px; font-weight:600}
+.wp .wsub{font-size:12px; color:var(--mfg); margin-top:2px}
+.wbtns{display:flex; gap:8px; flex-wrap:wrap}
+.wb{display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:42px; padding:0 14px; border:1px solid var(--bd); border-radius:9px; background:var(--card); color:var(--fg); font-size:14px; font-weight:500}
+.wb:hover{background:var(--muted)}
+.wb.pri{background:var(--fg); color:var(--bg); border-color:var(--fg)}
+.wlist{background:var(--card); border:1px solid var(--bd); border-radius:14px; padding:2px 14px; margin-top:10px}
+.wr{display:flex; align-items:center; gap:12px; padding:9px 0; border-bottom:1px solid var(--bd); min-height:62px}
+.wr:last-child{border-bottom:0}
+.wr .wn{flex:1; min-width:0}
+.wr .wn b{font-weight:600; font-size:15.5px}
+.wr .wn small{font-size:12px; color:var(--mfg); margin-left:6px}
+.wr .wn div{font-size:12.5px; color:var(--mfg)}
+.rmb,.adb{flex:none; width:44px; height:44px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:24px; line-height:1; border:1px solid}
+.rmb{color:var(--up); border-color:var(--up); background:transparent}
+.adb{color:var(--gr); border-color:var(--gr-bd); background:var(--gr-bg)}
+.adb.dn{color:var(--mfg); border-color:var(--bd); background:var(--muted); font-size:18px}
+.wsearch{margin-top:10px}
+#toast{position:fixed; left:50%; bottom:calc(24px + env(safe-area-inset-bottom,0px)); transform:translateX(-50%); max-width:90%; padding:10px 14px; border-radius:10px; background:var(--fg); color:var(--bg); font-size:13.5px; opacity:0; pointer-events:none; transition:opacity .2s; z-index:20}
+#toast.show{opacity:1}
+.btn2{display:flex; align-items:center; justify-content:center; width:100%; min-height:44px; margin-top:10px; border:1px solid var(--bd); border-radius:var(--radius); background:var(--card); color:var(--fg); font-weight:500; font-size:14px}
+.btn2:hover{background:var(--muted)}
 .sm{border:1px solid var(--bd); border-radius:14px; padding:14px; margin-bottom:16px; display:flex; flex-direction:column; gap:9px}
 .sm.vi{background:var(--vi-bg); border-color:var(--vi-bd)}
 .sm.am{background:var(--am-bg); border-color:var(--am-bd)}
@@ -264,6 +288,8 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
 
     <div class="seg" id="view" role="group" aria-label="보기 방식"></div>
 
+    <div id="wpanel" hidden></div>
+
     <div class="list" id="list"></div>
     <div class="lg" id="legend" hidden><span class="a">저점 근처</span><span class="b">새 최저가</span><span>그 밖</span></div>
     <p class="lead" id="legendNote" hidden style="margin-top:8px">칩의 숫자는 그 기간에 <b>가장 쌌던 가격보다 지금이 몇 % 비싼지</b>예요. 숫자가 작을수록 바닥에 가까워요.</p>
@@ -276,6 +302,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
 
   <div id="detailView" hidden></div>
   <div id="newsView" hidden></div>
+<div id="toast" role="status"></div>
 </div>
 
 <script>
@@ -283,13 +310,13 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
   "use strict";
   var $ = function(i){ return document.getElementById(i) };
   var DATA = null, UP = null, WATCH = {}, curDetail = null, listY = 0, upLoading = false;
-  var S = {sort:"m", filter:"ALL", view:"simple", q:"", shown:30, ex:"bithumb", dir:1};
+  var S = {sort:"m", filter:"ALL", view:"simple", q:"", shown:30, ex:"bithumb", dir:1, wmode:"view", wq:""};
   var EXN = {bithumb:"빗썸", upbit:"업비트"};
   function cur(){ return S.ex === "upbit" ? UP : DATA }
   var SORTS = [["d","1일"],["w","1주"],["m","1개월"],["q","3개월"],["h","6개월"],["y","12개월"],["y2","24개월"]];
   var PERIODS = [["w","1주"],["m","1개월"],["q","3개월"],["h","6개월"],["y","12개월"],["a","역대"]];
   var TAGS = {NEWLOW:["신저가 갱신","am"], REBOUND:["저점 반등","gr"], LOW:["저점권","vi"], SHORT:["단기 저점","vo"], HIGH:["고점권","mu"], MID:["중간","mu"], NONE:["준비 중","mu"]};
-  var FILTERS = [["ALL","전체"],["WATCH","관심"],["BUY","매수 후보"],["SELL","매도 후보"],["LOW","저점권"],["NEWLOW","신저가"],["REBOUND","저점 반등"]];
+  var FILTERS = [["ALL","전체"],["WATCH","관심"],["LOW","저점권"],["NEWLOW","신저가"],["REBOUND","저점 반등"],["CAU","유의"]];
   var VIEWS = [["simple","간단히"],["chips","저점 칩"]];
   var VERDICT = {
     NEWLOW:["신저가 갱신","am","더 내려갈 수 있는 상태예요. 반등이 확인될 때까지 지켜보세요."],
@@ -340,7 +367,47 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
   }
   function tone(v){ return v == null ? "mu" : v >= 0 ? "up" : "down" }
 
-  function sigOf(c){ if(S.ex === "upbit") return null; var w = WATCH[c.m]; return w && w.status === "ok" ? w.signal : null }
+  /* ---------- 관심 종목 (이 폰에 저장 + 선택하면 서버 설정 파일에도 반영) ---------- */
+  var WS = {}, WLK = {bithumb:"dr_w_b", upbit:"dr_w_u"}, MAXW = 20;
+  function lsGet(k){ try{ return localStorage.getItem(k) }catch(e){ return null } }
+  function lsSet(k, v){ try{ localStorage.setItem(k, v) }catch(e){} }
+  function lsDel(k){ try{ localStorage.removeItem(k) }catch(e){} }
+  function serverWatch(ex){ return (DATA && (ex === "upbit" ? DATA.watch_upbit : DATA.watch)) || [] }
+  function curWatch(ex){
+    var raw = lsGet(WLK[ex]);
+    if(raw){ try{ var o = JSON.parse(raw); if(o && Array.isArray(o.list)) return o.list }catch(e){} }
+    return serverWatch(ex);
+  }
+  function refreshWS(){ WS = {}; curWatch(S.ex).forEach(function(m){ WS[m] = 1 }) }
+  function reconcile(){   // 서버 목록이 이 폰에서 바꾼 목록과 같아지면, 폰에 임시로 둔 목록은 지워요
+    ["bithumb", "upbit"].forEach(function(ex){
+      var raw = lsGet(WLK[ex]); if(!raw) return;
+      try{
+        var o = JSON.parse(raw), a = (o.list || []).slice().sort().join("|"), b = serverWatch(ex).slice().sort().join("|");
+        if(a === b) lsDel(WLK[ex]);
+      }catch(e){ lsDel(WLK[ex]) }
+    });
+  }
+  function toast(msg){
+    var t = $("toast"); t.textContent = msg; t.classList.add("show");
+    clearTimeout(toast._t); toast._t = setTimeout(function(){ t.classList.remove("show") }, 2200);
+  }
+  function afterWatch(){
+    refreshWS();
+    if(curDetail && curDetail !== "_news") route(); else renderList();
+  }
+  function setWatch(list){
+    lsSet(WLK[S.ex], JSON.stringify({list:list, t:Date.now()}));
+    afterWatch();
+  }
+  function addWatch(m){
+    var l = curWatch(S.ex).slice();
+    if(l.indexOf(m) >= 0) return;
+    if(l.length >= MAXW){ toast("관심 종목은 최대 " + MAXW + "개까지예요"); return }
+    l.push(m); setWatch(l); toast("관심에 추가했어요");
+  }
+  function delWatch(m){ setWatch(curWatch(S.ex).filter(function(x){ return x !== m })); toast("관심에서 뺐어요") }
+
   function matches(c){
     if(S.q){
       var q = S.q.toLowerCase();
@@ -348,19 +415,16 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     }
     var f = S.filter;
     if(f === "ALL") return true;
-    if(f === "WATCH") return S.ex !== "upbit" && !!c.w;
-    if(f === "BUY" || f === "SELL") return sigOf(c) === f;
+    if(f === "WATCH") return !!WS[c.m];
+    if(f === "CAU") return !!c.cau;
     return c.tag === f;
   }
-  function filters(){
-    return S.ex === "upbit" ? FILTERS.filter(function(f){ return ["ALL","LOW","NEWLOW","REBOUND"].indexOf(f[0]) >= 0 }) : FILTERS;
-  }
+  function filters(){ return FILTERS }
   function counts(){
     var n = {};
     FILTERS.forEach(function(f){ n[f[0]] = 0 });
     cur().coins.forEach(function(c){
-      n.ALL++; if(c.w) n.WATCH++;
-      var s = sigOf(c); if(s === "BUY") n.BUY++; if(s === "SELL") n.SELL++;
+      n.ALL++; if(WS[c.m]) n.WATCH++; if(c.cau) n.CAU++;
       if(n[c.tag] != null) n[c.tag]++;
     });
     return n;
@@ -400,7 +464,8 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     b.onclick = function(){ location.hash = encodeURIComponent((S.ex === "upbit" ? "upbit-" : "") + c.s) };
     var top = el("div", "top"), l = el("div", "l"), nm = el("div", "nm", c.n);
     nm.appendChild(el("small", null, c.s));
-    if(c.w && S.ex !== "upbit") nm.appendChild(el("span", "star", "관심"));
+    if(WS[c.m]) nm.appendChild(el("span", "star", "관심"));
+    if(c.cau) nm.appendChild(el("span", "cau", "유의"));
     l.appendChild(nm);
     var t = TAGS[c.tag] || TAGS.NONE, s = el("div", "s");
     s.appendChild(el("span", "bdg " + t[1], t[0])); s.appendChild(el("em", null, c.tg));
@@ -414,7 +479,65 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     return b;
   }
 
+  function coinRow(m, btn){
+    var c = null; cur().coins.forEach(function(x){ if(x.m === m) c = x });
+    var r = el("div", "wr"), n = el("div", "wn");
+    if(c){
+      var b = el("b", null, c.n); n.appendChild(b); n.appendChild(el("small", null, c.s));
+      if(c.cau) n.appendChild(el("span", "cau", "유의"));
+      n.appendChild(el("div", "num", fmtPrice(c.p) + "원"));
+    } else { n.appendChild(el("b", null, m)); n.appendChild(el("div", null, "이 거래소에서 찾을 수 없는 종목이에요")) }
+    r.appendChild(n); r.appendChild(btn); return r;
+  }
+  function addResults(box){
+    box.textContent = "";
+    var q = (S.wq || "").toLowerCase(), have = WS, all = cur().coins.slice();
+    var rows = all.filter(function(c){
+      if(q) return c.n.toLowerCase().indexOf(q) >= 0 || c.s.toLowerCase().indexOf(q) >= 0;
+      return !have[c.m];
+    }).sort(function(a, b){ return b.v - a.v }).slice(0, 30);
+    if(!rows.length){ box.appendChild(el("div", "empty", "찾는 코인이 없어요.")); return }
+    rows.forEach(function(c){
+      var btn;
+      if(have[c.m]){ btn = el("span", "adb dn", "✓"); btn.setAttribute("aria-label", "이미 관심 종목이에요") }
+      else { btn = el("button", "adb", "+"); btn.setAttribute("aria-label", c.n + " 관심에 추가"); btn.onclick = function(){ addWatch(c.m) } }
+      box.appendChild(coinRow(c.m, btn));
+    });
+  }
+  function renderPanel(){
+    var box = $("wpanel"); box.textContent = "";
+    var show = S.filter === "WATCH";
+    box.hidden = !show;
+    if(!show) return;
+    var list = curWatch(S.ex), pn = el("div", "card wp");
+    var top = el("div", "wtop"); top.appendChild(el("b", null, "관심 종목 " + list.length + "개"));
+    top.appendChild(el("div", "wsub", "이 폰에만 저장돼요 · 텔레그램 유의 알림은 설정 파일(config.json)의 관심 목록 기준이에요")); pn.appendChild(top);
+    var btns = el("div", "wbtns");
+    function wb(text, cls, fn){ var b = el("button", "wb" + (cls ? " " + cls : ""), text); b.onclick = fn; btns.appendChild(b) }
+    if(S.wmode === "view"){ wb("＋ 추가", "pri", function(){ S.wmode = "add"; S.wq = ""; renderList() }); wb("편집", "", function(){ S.wmode = "edit"; renderList() }) }
+    else if(S.wmode === "edit"){ wb("완료", "pri", function(){ S.wmode = "view"; renderList() }); wb("＋ 추가", "", function(){ S.wmode = "add"; S.wq = ""; renderList() }) }
+    else { wb("닫기", "pri", function(){ S.wmode = "view"; renderList() }) }
+    pn.appendChild(btns);
+    box.appendChild(pn);
+    if(S.wmode === "edit"){
+      var wl = el("div", "wlist");
+      if(!list.length) wl.appendChild(el("div", "empty", "관심 종목이 없어요. 추가를 눌러 넣어 보세요."));
+      list.forEach(function(m){
+        var rm = el("button", "rmb", "−"); rm.setAttribute("aria-label", "관심에서 빼기"); rm.onclick = function(){ delWatch(m) };
+        wl.appendChild(coinRow(m, rm));
+      });
+      box.appendChild(wl);
+    } else if(S.wmode === "add"){
+      var sw = el("div", "search wsearch"), inp2 = el("input"); inp2.type = "search"; inp2.placeholder = "추가할 코인 이름이나 기호로 검색"; inp2.value = S.wq || ""; inp2.autocomplete = "off"; inp2.setAttribute("aria-label", "추가할 코인 검색");
+      sw.innerHTML = '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>'; sw.appendChild(inp2); box.appendChild(sw);
+      var res = el("div", "wlist"); box.appendChild(res);
+      inp2.addEventListener("input", function(){ S.wq = this.value.trim(); addResults(res) });
+      addResults(res);
+    }
+  }
+
   function renderList(){
+    refreshWS();
     var n = counts(), box = $("chips"); box.textContent = "";
     var xb = $("ex"); xb.textContent = "";
     [["bithumb","빗썸"],["upbit","업비트"]].forEach(function(x){
@@ -427,7 +550,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     filters().forEach(function(f){
       var b = el("button", "chip", f[1]); b.appendChild(el("b", "num", String(n[f[0]] || 0)));
       b.setAttribute("aria-pressed", S.filter === f[0] ? "true" : "false");
-      b.onclick = function(){ S.filter = f[0]; S.shown = 30; renderList() };
+      b.onclick = function(){ S.filter = f[0]; S.shown = 30; if(f[0] !== "WATCH"){ S.wmode = "view" } renderList() };
       box.appendChild(b);
     });
     var sb = $("sort"); sb.textContent = "";
@@ -442,12 +565,15 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
       b.onclick = function(){ S.view = v[0]; renderList() };
       vb.appendChild(b);
     });
-    var all = sortedCoins(), list = $("list"); list.textContent = "";
+    renderPanel();
+    var editing = S.filter === "WATCH" && S.wmode !== "view";
+    var all = sortedCoins(), list = $("list"); list.textContent = ""; list.hidden = editing;
     if(!all.length) list.appendChild(el("div", "empty", "해당하는 코인이 없어요."));
     all.slice(0, S.shown).forEach(function(c){ list.appendChild(card(c)) });
     $("legend").hidden = S.view !== "chips"; $("legendNote").hidden = S.view !== "chips";
     var more = $("more");
-    if(all.length > S.shown){
+    if(editing){ more.hidden = true; $("legend").hidden = true; $("legendNote").hidden = true }
+    else if(all.length > S.shown){
       more.hidden = false; more.textContent = "더 보기 (" + Math.min(30, all.length - S.shown) + "개 더, 남은 " + (all.length - S.shown) + "개)";
     } else more.hidden = true;
 
@@ -637,6 +763,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
   function kv(label, valueNode){ var k = el("div", "kv"); k.appendChild(el("span", null, label)); k.appendChild(valueNode); return k }
 
   function showDetail(c, keepScroll){
+    refreshWS();
     var y = window.scrollY, age = c.age || 0;
     $("listView").hidden = true; $("newsView").hidden = true;
     var v = $("detailView"); v.hidden = false; v.textContent = "";
@@ -652,6 +779,21 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     rr.appendChild(big);
     var d1 = c.ch.d, dd = el("div", "num " + tone(d1), "1일 " + (d1 == null ? "-" : fmtPct(d1))); dd.style.cssText = "font-size:13.5px;font-weight:600;text-align:right";
     rr.appendChild(dd); dh.appendChild(l); dh.appendChild(rr); v.appendChild(dh);
+
+    if(c.cau){
+      var cb = el("div", "sm am"), ct = el("div", "t");
+      ct.appendChild(document.createTextNode("거래소 안내")); ct.appendChild(el("span", "cau", "투자유의"));
+      cb.appendChild(ct);
+      var l1 = el("div", "ln"), i1 = el("i"); i1.style.background = "var(--am)"; l1.appendChild(i1); l1.appendChild(el("div", null, EXN[S.ex] + "이 이 코인을 투자유의종목으로 지정했어요."));
+      var l2 = el("div", "ln"), i2 = el("i"); i2.style.background = "var(--mfg)"; l2.appendChild(i2);
+      l2.appendChild(el("div", null, "지정 사유와 거래지원 종료 여부는 거래소 공지에서 확인해 주세요. 유의 지정이 모두 거래지원 종료로 이어지는 건 아니에요."));
+      cb.appendChild(l1); cb.appendChild(l2);
+      var nb = el("a", "linkbtn"); nb.target = "_blank"; nb.rel = "noopener noreferrer"; nb.style.margin = "4px 0 0";
+      nb.href = S.ex === "upbit" ? "https://upbit.com/service_center/notice" : "https://feed.bithumb.com/notice";
+      nb.innerHTML = '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
+      nb.appendChild(document.createTextNode(EXN[S.ex] + " 공지 보기")); cb.appendChild(nb);
+      v.appendChild(cb);
+    }
 
     // ① 한눈에 보기
     var tgs = TAGS[c.tag] || TAGS.NONE, cls = c.tag === "NEWLOW" ? "am" : c.tag === "REBOUND" ? "gr" : (c.tag === "LOW" || c.tag === "SHORT") ? "vi" : "";
@@ -750,27 +892,23 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     s2.appendChild(card2); v.appendChild(s2);
     v.appendChild(chartSection(c));
 
-    var s3 = section("신호와 알림"), card3 = el("div", "card");
+    var s3 = section("관심과 알림"), card3 = el("div", "card"), inW = !!WS[c.m];
     if(w && w.status === "ok"){
-      var sg = {BUY:["매수 후보","gr"],SELL:["매도 후보","am"],WAIT:["관망","mu"]}[w.signal] || ["관망","mu"];
-      card3.appendChild(kv("지표 신호", el("span", "bdg " + sg[1], sg[0])));
       card3.appendChild(kv("점수", el("span", "num", (w.score > 0 ? "+" : "") + w.score)));
       if(w.rsi != null) card3.appendChild(kv("RSI", el("span", "num", w.rsi.toFixed(0))));
       card3.appendChild(kv("1시간 변동", el("span", "num " + tone(w.chg), fmtPct(w.chg))));
       if(w.reasons && w.reasons.length){ var ul = el("ul", "why"); w.reasons.forEach(function(r){ ul.appendChild(el("li", null, r)) }); card3.appendChild(ul) }
       if(w.target || w.stop) card3.appendChild(kv("목표가 · 손절가", el("span", "num", (w.target ? fmtPrice(w.target) : "-") + " · " + (w.stop ? fmtPrice(w.stop) : "-"))));
-      card3.appendChild(el("p", "note", "관심 종목이라 저점권 진입, 신저가, 반등 확인 때 텔레그램으로 알려 드려요."));
-    } else {
-      var p;
-      if(S.ex === "upbit"){
-        p = el("p", "note", "업비트 화면은 시세와 저점 판단만 보여 줘요. 매수·매도 신호와 텔레그램 알림은 빗썸 관심 종목 기준이에요.");
-      } else {
-        p = el("p", "note", "관심 종목이 아니라 텔레그램 알림은 오지 않아요. 알림을 받으려면 저장소의 ");
-        p.appendChild(el("code", null, "config.json")); p.appendChild(document.createTextNode("에서 markets에 "));
-        p.appendChild(el("code", null, '"' + c.m + '"')); p.appendChild(document.createTextNode("을 추가해 주세요."));
-      }
-      p.style.marginTop = "0"; card3.appendChild(p);
     }
+    var inSrv = serverWatch(S.ex).indexOf(c.m) >= 0;
+    var nt = inSrv ? "설정 파일의 관심 종목이라, 이 코인이 투자유의로 지정되거나 해제되면 텔레그램으로 알려 드려요."
+           : inW ? "이 폰에서만 관심으로 표시돼요. 텔레그램 알림은 설정 파일(config.json)의 관심 목록 기준이에요."
+           : "관심에 추가하면 이 폰에서 관심 탭으로 모아 볼 수 있어요.";
+    if(inSrv && S.ex === "bithumb" && !(w && w.status === "ok")) nt += " RSI 같은 지표는 다음 자동 실행 뒤에 나타나요.";
+    var p = el("p", "note", nt); p.style.marginTop = w && w.status === "ok" ? "8px" : "0"; card3.appendChild(p);
+    var tg = el("button", "btn2", inW ? "관심에서 빼기" : "＋ 관심에 추가");
+    tg.onclick = function(){ if(inW) delWatch(c.m); else addWatch(c.m) };
+    card3.appendChild(tg);
     s3.appendChild(card3); v.appendChild(s3);
 
     var sh = section("숫자 보는 법", "이 코인 기준"), how = el("div", "card how");
@@ -822,6 +960,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
         if(!d.coins || !d.coins.length) throw new Error("empty");
         DATA = d; WATCH = {};
         (d.markets || []).forEach(function(m){ WATCH[m.market] = m });
+        reconcile();
         if(UP || S.ex === "upbit") loadUp(true);
         route();
         if(curDetail === "_news") loadNews(false, function(){ showNews(true) });
@@ -851,7 +990,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
   }
   function switchEx(x){
     if(S.ex === x) return;
-    S.ex = x; S.shown = 30;
+    S.ex = x; S.shown = 30; S.wmode = "view"; S.wq = "";
     if(!filters().some(function(f){ return f[0] === S.filter })) S.filter = "ALL";
     if(x === "upbit" && !UP){
       $("ex").querySelectorAll("button").forEach(function(b, i){ b.setAttribute("aria-pressed", i === 1 ? "true" : "false") });

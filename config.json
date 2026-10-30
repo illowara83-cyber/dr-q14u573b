@@ -43,7 +43,8 @@
     "digest_every_hours": 6,
     "quiet_from": 22,
     "quiet_to": 7,
-    "instant_alerts": false
+    "instant_alerts": false,
+    "caution_scope": "watch"
   },
   "news": {
     "enabled": true,
@@ -104,5 +105,6 @@
         "스테이블코인"
       ]
     ]
-  }
+  },
+  "markets_upbit": []
 }
