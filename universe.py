@@ -71,7 +71,7 @@ def fetch_tickers():
                 continue
             out[sym] = {"p": p, "d": float(t.get("fluctate_rate_24H", 0) or 0) / 100,
                         "v": float(t.get("acc_trade_value_24H", 0) or 0)}
-        except (KeyError, ValueError):
+        except Exception:  # 값이 비었거나 이상한 코인은 건너뛰어요
             continue
     if not out:
         raise RuntimeError("코인 목록이 비어 있어요")

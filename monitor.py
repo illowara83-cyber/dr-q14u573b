@@ -83,8 +83,8 @@ def fmt_price(p):
     return f"{p:,.4f}"
 
 
-def fmt_pct(x):
-    return f"{x * 100:+.1f}%"
+def fmt_pct(x, d=1):
+    return f"{x * 100:+.{d}f}%"
 
 
 def display_name(market):
@@ -315,12 +315,19 @@ def msg_target(m, kind, level):
     return f"{icon} · {head(m)}\n현재가 {fmt_price(m['price'])}원 (설정 {fmt_price(level)}원)"
 
 
+def describe_error(e):
+    import traceback
+    tb = traceback.extract_tb(e.__traceback__)
+    where = f"{os.path.basename(tb[-1].filename)} {tb[-1].lineno}번째 줄" if tb else ""
+    return f"{type(e).__name__}: {str(e)[:200]}\n위치: {where}"
+
+
 def msg_low(m, coin, kind):
     lo, p, age = coin["lo"], coin["p"], coin.get("age", 0)
     head_line = f"{m['name']} ({m['market']})"
     now_line = f"현재가 {fmt_price(p)}원 (1시간 {fmt_pct(m['chg'])})"
     if kind == "LOW":
-        parts = [f"{universe.PERIOD_LABEL[k]} {fmt_pct(p / lo[k][0] - 1, 0)}" for k in ("a", "q", "h", "y")
+        parts = [f"{universe.PERIOD_LABEL[k]} {(p / lo[k][0] - 1) * 100:+.0f}%" for k in ("a", "q", "h", "y")
                  if universe.in_zone(k, p, lo.get(k), age)]
         return (f"저점권 진입 · {head_line}\n{now_line}\n저점 근처(최저가 대비): {' · '.join(parts)}\n"
                 "아직 반등 확인 전이에요")
@@ -393,7 +400,15 @@ def run_once(cfg, demo=False):
                 st["hit"].pop(mk, None)
 
     # 빗썸 전체 코인 + 저점 판정 (관심 종목은 저점 알림도 보내요)
-    coins, stale = universe.build(cfg, st, demo)
+    try:
+        coins, stale = universe.build(cfg, st, demo)
+    except Exception as e:  # 전체 코인 처리에서 오류가 나도 관심 종목 알림은 계속 보내요
+        import traceback
+        traceback.print_exc()
+        coins, stale = st.get("last_coins", []), True
+        if cooldown_ok(st, "uerr", now, 360):
+            alerts.append(f"⚠️ 전체 코인 처리 중 오류가 났어요 (이전 데이터를 보여 줘요)\n{describe_error(e)}")
+            st["last"]["uerr"] = iso(now)
     cmap = {c["m"]: c for c in coins}
     watch_set = {x["market"] for x in markets}
     for c in coins:
@@ -493,7 +508,16 @@ def main():
     args = ap.parse_args()
     cfg = load_config(args.config)
     while True:
-        data = run_once(cfg, args.demo)
+        try:
+            data = run_once(cfg, args.demo)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            tg_send("⚠️ 코인 신호판 프로그램 오류\n" + describe_error(e) + "\n이 메시지를 그대로 알려 주시면 고칠 수 있어요.")
+            if not args.loop:
+                sys.exit(1)
+            time.sleep(args.loop)
+            continue
         print_table(data)
         print_universe(data)
         if not args.loop:
