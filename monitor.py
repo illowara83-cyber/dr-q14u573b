@@ -316,17 +316,16 @@ def msg_target(m, kind, level):
 
 
 def msg_low(m, coin, kind):
-    lo, p = coin["lo"], coin["p"]
+    lo, p, age = coin["lo"], coin["p"], coin.get("age", 0)
     head_line = f"{m['name']} ({m['market']})"
     now_line = f"현재가 {fmt_price(p)}원 (1시간 {fmt_pct(m['chg'])})"
     if kind == "LOW":
-        parts = [f"{universe.PERIOD_LABEL[k]} {universe.pos_of(p, lo[k]) * 100:.0f}%" for k in ("q", "h", "y") if lo.get(k)]
-        key = next((k for k in ("q", "h", "y") if lo.get(k) and universe.pos_of(p, lo[k]) <= universe.ZONE), "q")
-        base = lo[key][0]
-        return (f"저점권 진입 · {head_line}\n{now_line}\n범위의 아래쪽: {' · '.join(parts)}\n"
-                f"{universe.PERIOD_LABEL[key]} 최저가 {fmt_price(base)}원보다 {fmt_pct(p / base - 1)}\n아직 반등 확인 전이에요")
+        parts = [f"{universe.PERIOD_LABEL[k]} {fmt_pct(p / lo[k][0] - 1, 0)}" for k in ("a", "q", "h", "y")
+                 if universe.in_zone(k, p, lo.get(k), age)]
+        return (f"저점권 진입 · {head_line}\n{now_line}\n저점 근처(최저가 대비): {' · '.join(parts)}\n"
+                "아직 반등 확인 전이에요")
     if kind == "NEWLOW":
-        key = next((k for k in ("y", "h", "q", "m", "w") if lo.get(k) and lo[k][2] == 0), "w")
+        key = next((k for k in ("a", "y", "h", "q", "m", "w") if lo.get(k) and lo[k][2] == 0 and (k != "a" or age >= universe.MIN_AGE_A)), "w")
         prev = coin.get("pl", {}).get(key)
         extra = f" (이전 저점 {fmt_price(prev)}원)" if prev else ""
         return (f"신저가 갱신 · {head_line}\n{now_line}\n{universe.PERIOD_LABEL[key]} 최저가를 새로 썼어요{extra}\n"

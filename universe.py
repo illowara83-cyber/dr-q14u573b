@@ -19,9 +19,12 @@ BASE = "https://api.bithumb.com"
 CLOSE_REFS = [("d3", 3), ("w", 7), ("m", 30), ("q", 90), ("h", 180), ("y", 365), ("y2", 730)]
 # 최저·최고가를 보는 기간: 1주, 1개월, 3개월, 6개월, 12개월
 LOW_PERIODS = [("w", 7), ("m", 30), ("q", 90), ("h", 180), ("y", 365)]
-PERIOD_LABEL = {"w": "1주", "m": "1개월", "q": "3개월", "h": "6개월", "y": "12개월"}
+PERIOD_LABEL = {"w": "1주", "m": "1개월", "q": "3개월", "h": "6개월", "y": "12개월", "a": "역대"}
+ALL_KEYS = [k for k, _ in LOW_PERIODS] + ["a"]   # a = 역대(상장 이후 전체)
 
 ZONE = 0.15        # 범위의 아래쪽 15% 이내면 저점권
+A_ZONE = 0.30      # 역대 최저가보다 30% 이내면 역대 저점 근처 (범위가 너무 넓어서 비율로 봐요)
+MIN_AGE_A = 90     # 상장한 지 90일이 안 된 코인은 역대 판정을 하지 않아요
 REBOUND_PCT = 0.04  # 저점에서 4% 이상 올라서면 반등
 REBOUND_DAYS = 14   # 저점이 최근 14일 안이어야 반등으로 봐요
 
@@ -42,6 +45,15 @@ def to_date(s):
 def pos_of(p, lo):
     low, high = lo[0], lo[1]
     return 0.5 if high <= low else (p - low) / (high - low)
+
+
+def in_zone(key, p, lo, age=9999):
+    """그 기간에서 저점 근처인가 (역대는 최저가 대비 비율, 나머지는 범위의 아래쪽 15%)"""
+    if not lo:
+        return False
+    if key == "a":
+        return age >= MIN_AGE_A and p / lo[0] - 1 <= A_ZONE
+    return pos_of(p, lo) <= ZONE
 
 
 # ───────────────────────── 빗썸 API ─────────────────────────
@@ -88,17 +100,19 @@ def fetch_daily(sym):
             continue
         rows.append((datetime.fromtimestamp(ts / 1000, KST).strftime("%Y-%m-%d"), o, h, l, c))
     rows.sort(key=lambda x: x[0])
-    return rows[-800:]
+    return rows[-5000:]
 
 
 # ───────────────────────── 시험용(가짜) 데이터 ─────────────────────────
 DEMO_SYMBOLS = ["BTC", "ETH", "XRP", "SOL", "DOGE", "PCI", "ADA", "AVAX", "DOT", "LINK", "TRX", "BCH", "ETC",
                 "LTC", "ATOM", "SUI", "APT", "ARB", "NEAR", "XLM", "SHIB", "HBAR", "EOS", "STX", "SEI", "ONDO",
-                "AAA", "BBB", "CCC", "DDD", "EEE", "FFF", "GGG", "HHH", "III", "JJJ", "KKK", "LLL", "MMM", "NNN"]
+                "AAA", "BBB", "CCC", "DDD", "EEE", "FFF", "GGG", "HHH", "III", "JJJ", "KKK", "LLL", "MMM", "NNN",
+                "NEWA", "NEWB"]
+DEMO_SHORT = {"NEWA": 60, "NEWB": 200}   # 상장한 지 얼마 안 된 코인
 
 
 def demo_series(sym):
-    cands = cs.demo_candles(sym, 800)
+    cands = cs.demo_candles(sym, 800)[-DEMO_SHORT.get(sym, 800):]
     today = datetime.now(KST).date()
     n = len(cands)
     return [((today - timedelta(days=n - 1 - i)).strftime("%Y-%m-%d"), c.o, c.h, c.l, c.c) for i, c in enumerate(cands)]
@@ -128,13 +142,19 @@ def make_stats(rows, today):
             hi = max(win, key=lambda r: r[2])
             st["low"][key], st["ldate"][key] = lo[3], lo[0]
             st["high"][key], st["hdate"][key] = hi[2], hi[0]
+    lo = min(rows, key=lambda r: r[3])   # 역대 = 받은 일봉 전체
+    hi = max(rows, key=lambda r: r[2])
+    st["low"]["a"], st["ldate"]["a"] = lo[3], lo[0]
+    st["high"]["a"], st["hdate"]["a"] = hi[2], hi[0]
     return st
 
 
 def judge(p, coin):
     """저점 판정: NEWLOW > REBOUND > LOW > SHORT > HIGH > MID"""
-    lo, ch = coin["lo"], coin["ch"]
-    for key in ("y", "h", "q", "m", "w"):
+    lo, ch, age = coin["lo"], coin["ch"], coin.get("age", 0)
+    for key in ("a", "y", "h", "q", "m", "w"):
+        if key == "a" and age < MIN_AGE_A:
+            continue
         l = lo.get(key)
         if l and l[2] == 0 and p <= l[0] * 1.0005:
             return "NEWLOW", f"{PERIOD_LABEL[key]} 최저가를 새로 썼어요"
@@ -144,10 +164,12 @@ def judge(p, coin):
         if l and 0 < l[2] <= REBOUND_DAYS and p / l[0] - 1 >= REBOUND_PCT and pos_of(p, l) <= 0.35 \
                 and d3 is not None and d3 > 0:
             return "REBOUND", f"{PERIOD_LABEL[key]} 저점에서 +{(p / l[0] - 1) * 100:.0f}% 반등"
-    zone = [PERIOD_LABEL[k][:-2] for k in ("q", "h", "y") if lo.get(k) and pos_of(p, lo[k]) <= ZONE]
+    if in_zone("a", p, lo.get("a"), age):
+        return "LOW", "역대 저점 근처"
+    zone = [PERIOD_LABEL[k][:-2] for k in ("q", "h", "y") if in_zone(k, p, lo.get(k))]
     if zone:
         return "LOW", "·".join(zone) + "개월 저점 근처"
-    short = [PERIOD_LABEL[k] for k in ("w", "m") if lo.get(k) and pos_of(p, lo[k]) <= ZONE]
+    short = [PERIOD_LABEL[k] for k in ("w", "m") if in_zone(k, p, lo.get(k))]
     if short:
         return "SHORT", "·".join(short) + " 저점 근처"
     if lo.get("q") and pos_of(p, lo["q"]) >= 0.85:
@@ -158,14 +180,15 @@ def judge(p, coin):
 def build_coin(sym, name, tk, stat, today):
     p = tk["p"]
     coin = {"m": "KRW-" + sym, "n": name, "s": sym, "p": sig(p), "v": round(tk["v"]),
-            "ch": {"d": round(tk["d"], 5)}, "lo": {}, "pl": {}, "tag": "NONE", "tg": "데이터 준비 중"}
+            "ch": {"d": round(tk["d"], 5)}, "lo": {}, "pl": {}, "tag": "NONE", "tg": "데이터 준비 중",
+            "age": (stat or {}).get("n", 0)}
     if not stat:
         return coin
     for key, _ in CLOSE_REFS:
         ref = stat["close"].get(key)
         coin["ch"][key] = round(p / ref - 1, 5) if ref else None
     today_d = to_date(today)
-    for key, _ in LOW_PERIODS:
+    for key in ALL_KEYS:
         if key not in stat["low"]:
             continue
         low, high = stat["low"][key], stat["high"][key]
@@ -207,7 +230,7 @@ def build(cfg, st, demo=False, budget=100):
     min_v = cfg.get("min_trade_value_24h", 0) or 0
     syms = [s for s, t in tick.items() if t["v"] >= min_v]
 
-    todo = [s for s in syms if (ust.get(s) or {}).get("date") != today]
+    todo = [s for s in syms if (ust.get(s) or {}).get("date") != today or "a" not in (ust.get(s) or {}).get("low", {})]
     fetch = (lambda s: demo_series(s)) if demo else fetch_daily
     deadline = time.time() + budget
     done = 0
