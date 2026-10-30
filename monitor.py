@@ -28,6 +28,8 @@ import coin_signal as cs
 
 KST = timezone(timedelta(hours=9))
 SITE, WEB, STATE_DIR = "site", "web", "state"
+ROOT_WEB_FILES = ["index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png"]
+PERIODS = [("w", 7), ("m", 30), ("q", 90), ("y", 365)]
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
 
 NAMES = {
@@ -36,14 +38,15 @@ NAMES = {
     "POL": "폴리곤", "MATIC": "폴리곤", "BCH": "비트코인캐시", "ETC": "이더리움클래식",
     "LTC": "라이트코인", "ATOM": "코스모스", "SUI": "수이", "APT": "앱토스", "ARB": "아비트럼",
     "NEAR": "니어프로토콜", "XLM": "스텔라루멘", "SHIB": "시바이누", "HBAR": "헤데라",
-    "USDT": "테더", "EOS": "이오스", "STX": "스택스", "SEI": "세이", "ONDO": "온도파이낸스",
+    "USDT": "테더", "PCI": "페이코인", "EOS": "이오스", "STX": "스택스", "SEI": "세이", "ONDO": "온도파이낸스",
 }
 
 DEFAULTS = {
     "exchange": "upbit",
     "fallback_exchange": "bithumb",
     "unit": 60,
-    "markets": ["KRW-BTC", "KRW-ETH", "KRW-XRP", "KRW-SOL", "KRW-DOGE"],
+    "markets": ["KRW-BTC", "KRW-ETH", "KRW-XRP", "KRW-SOL", "KRW-DOGE", "KRW-PCI"],
+    "market_exchange": {"KRW-PCI": "bithumb"},
     "buy_threshold": 4,
     "sell_threshold": -4,
     "fee": 0.0025,
@@ -120,6 +123,7 @@ def load_state():
     st.setdefault("last", {})
     st.setdefault("hit", {})
     st.setdefault("history", [])
+    st.setdefault("refs", {})
     return st
 
 
@@ -155,12 +159,18 @@ def tg_send(text):
 
 
 # ───────────────────────── 시세 분석 ─────────────────────────
+def exchange_order(cfg, market):
+    order = []
+    for ex in [cfg.get("market_exchange", {}).get(market), cfg["exchange"], cfg.get("fallback_exchange")]:
+        if ex and ex not in order:
+            order.append(ex)
+    return order
+
+
 def candles_for(cfg, market, unit, count, demo):
     if demo:  # 시험용: 같은 가짜 시세에서 잘라 쓰기
         return cs.demo_candles(market, 200)[-count:], "demo"
-    order = [cfg["exchange"]]
-    if cfg.get("fallback_exchange") and cfg["fallback_exchange"] != cfg["exchange"]:
-        order.append(cfg["fallback_exchange"])
+    order = exchange_order(cfg, market)
     last = None
     for ex in order:
         try:
@@ -193,6 +203,91 @@ def analyze(cfg, market, demo):
         "rsi": round(r, 1) if r is not None else None, "reasons": why,
         "spark": [round(x, 6) for x in ind["c"][-48:]],
     }
+
+
+# ───────────────────────── 기간별 변동 (일봉 종가 기준) ─────────────────────────
+def fetch_days_v1(base, market, total):
+    rows_all, to = [], None
+    while len(rows_all) < total:
+        n = min(200, total - len(rows_all))
+        q = {"market": market, "count": n}
+        if to:
+            q["to"] = to
+        rows = cs.http_json(f"{base}/v1/candles/days?" + urllib.parse.urlencode(q))
+        if not rows:
+            break
+        rows_all.extend(rows)
+        to = rows[-1]["candle_date_time_utc"] + "Z"
+        time.sleep(0.15)
+        if len(rows) < n:
+            break
+    return {r["candle_date_time_kst"][:10]: float(r["trade_price"]) for r in rows_all}
+
+
+def fetch_days_bithumb_legacy(market, total):
+    quote, coin = market.split("-")
+    js = cs.http_json(f"{cs.BASES['bithumb']}/public/candlestick/{coin}_{quote}/24h")
+    if js.get("status") != "0000":
+        raise RuntimeError(f"빗썸 응답 오류: {js}")
+    out = {}
+    for r in js["data"][-total:]:
+        d = datetime.fromtimestamp(int(r[0]) / 1000, KST).strftime("%Y-%m-%d")
+        out[d] = float(r[2])
+    return out
+
+
+def daily_closes(cfg, market, demo, total=380):
+    """날짜(YYYY-MM-DD) → 일봉 종가"""
+    if demo:
+        big = cs.demo_candles(market, 400)
+        k = cs.demo_candles(market, 200)[-1].c / big[-1].c
+        today = datetime.now(KST).date()
+        return {(today - timedelta(days=len(big) - 1 - i)).strftime("%Y-%m-%d"): c.c * k for i, c in enumerate(big)}
+    last = None
+    for ex in exchange_order(cfg, market):
+        try:
+            d = fetch_days_v1(cs.BASES[ex], market, total)
+            if d:
+                return d
+        except Exception as e:
+            last = e
+        if ex == "bithumb":  # 새 API 가 안 되면 구형 API 로 한 번 더
+            try:
+                return fetch_days_bithumb_legacy(market, total)
+            except Exception as e:
+                last = e
+    raise last or RuntimeError("일봉을 가져오지 못했어요")
+
+
+def compute_refs(daily):
+    """오늘 기준 N일 전 일봉 종가 (없으면 None)"""
+    if not daily:
+        return {k: None for k, _ in PERIODS}
+    base = datetime.strptime(max(daily), "%Y-%m-%d").date()
+    refs = {}
+    for key, n in PERIODS:
+        ref = None
+        for back in range(0, 4):  # 그날 또는 그 전 3일 안의 가장 가까운 값
+            d = (base - timedelta(days=n + back)).strftime("%Y-%m-%d")
+            if d in daily:
+                ref = daily[d]
+                break
+        refs[key] = ref
+    return refs
+
+
+def get_refs(cfg, st, market, demo):
+    today = datetime.now(KST).strftime("%Y-%m-%d")
+    c = st["refs"].get(market)
+    if c and c.get("date") == today:
+        return c["refs"]
+    try:
+        refs = compute_refs(daily_closes(cfg, market, demo))
+        st["refs"][market] = {"date": today, "refs": refs}
+        return refs
+    except Exception as e:
+        print(f"{market}: 기간별 변동 계산 실패 {e}")
+        return c["refs"] if c else None
 
 
 # ───────────────────────── 알림 문구 ─────────────────────────
@@ -239,6 +334,9 @@ def run_once(cfg, demo=False):
             continue
         tg = cfg["targets"].get(mk) or {}
         m["target"], m["stop"] = tg.get("target"), tg.get("stop")
+        refs = get_refs(cfg, st, mk, demo)
+        m["perf"] = ({k: (round(m["price"] / v - 1, 5) if v else None) for k, v in refs.items()}
+                     if refs else None)
         markets.append(m)
 
         # 1) 신호 변경
@@ -309,6 +407,9 @@ def publish(data):
     os.makedirs(SITE, exist_ok=True)
     if os.path.isdir(WEB):
         shutil.copytree(WEB, SITE, dirs_exist_ok=True)
+    for f in ROOT_WEB_FILES:  # 저장소 맨 바깥에 올린 화면 파일도 사용 (새로 올린 것이 우선)
+        if os.path.isfile(f):
+            shutil.copy(f, os.path.join(SITE, f))
     tmp = os.path.join(SITE, "data.json.tmp")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
@@ -321,8 +422,11 @@ def print_table(data):
         if m["status"] != "ok":
             print(f"  {m['market']:<10} 오류: {m.get('error', '')}")
             continue
+        pf = m.get("perf") or {}
+        pf_txt = " ".join(f"{lb} {fmt_pct(pf[k]) if pf.get(k) is not None else '-'}"
+                          for k, lb in (("w", "1주"), ("m", "1달"), ("q", "3달"), ("y", "1년")))
         print(f"  {m['market']:<10} {fmt_price(m['price']):>14}원  1h {fmt_pct(m['chg']):>7}  "
-              f"{m['signal']:<5} 점수 {m['score']:+d}  {', '.join(m['reasons']) or '-'}")
+              f"{m['signal']:<5} 점수 {m['score']:+d}  {pf_txt}")
 
 
 def main():

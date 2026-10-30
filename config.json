@@ -1,8 +1,16 @@
 {
-  "exchange": "upbit",
-  "fallback_exchange": "bithumb",
+  "exchange": "bithumb",
+  "fallback_exchange": null,
   "unit": 60,
-  "markets": ["KRW-BTC", "KRW-ETH", "KRW-XRP", "KRW-SOL", "KRW-DOGE"],
+  "markets": [
+    "KRW-BTC",
+    "KRW-ETH",
+    "KRW-XRP",
+    "KRW-SOL",
+    "KRW-DOGE",
+    "KRW-PCI"
+  ],
+  "market_exchange": {},
   "buy_threshold": 4,
   "sell_threshold": -4,
   "fee": 0.0025,
@@ -15,6 +23,9 @@
     "cooldown_minutes": 180
   },
   "targets": {
-    "KRW-BTC": {"target": null, "stop": null}
+    "KRW-BTC": {
+      "target": null,
+      "stop": null
+    }
   }
 }
