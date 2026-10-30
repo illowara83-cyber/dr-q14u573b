@@ -157,6 +157,26 @@ h2{font-size:15px; font-weight:600; margin:26px 2px 8px}
 .dh h1 small{font-size:13px; font-weight:400; color:var(--mfg); margin-left:6px}
 .dh .big{font-size:25px; font-weight:600; text-align:right}
 .dh .big small{font-size:13px; font-weight:400; color:var(--mfg)}
+.sm{border:1px solid var(--bd); border-radius:14px; padding:14px; margin-bottom:16px; display:flex; flex-direction:column; gap:9px}
+.sm.vi{background:var(--vi-bg); border-color:var(--vi-bd)}
+.sm.am{background:var(--am-bg); border-color:var(--am-bd)}
+.sm.gr{background:var(--gr-bg); border-color:var(--gr-bd)}
+.sm .t{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--mfg)}
+.ln{display:flex; gap:9px; align-items:flex-start; font-size:14.5px; line-height:1.55}
+.ln i{flex:none; width:10px; height:10px; border-radius:50%; margin-top:7px}
+.ln b{font-weight:600}
+.lead{font-size:13px; color:var(--mfg); line-height:1.6; margin:0 2px 8px}
+.lead b{font-weight:600; color:var(--fg)}
+.s{font-size:14px; line-height:1.55}
+.s b{font-weight:600}
+.bw{padding-top:20px}
+.bar u i{position:absolute; bottom:22px; left:50%; transform:translateX(-50%); font-style:normal; font-size:11px; color:var(--fg); white-space:nowrap}
+.ends{display:flex; justify-content:space-between; font-size:12px; color:var(--mfg)}
+.cell span{display:block; font-size:11px; color:var(--mfg); margin-top:1px}
+.how{display:flex; flex-direction:column; gap:12px; font-size:13.5px; line-height:1.6}
+.how .hh{font-size:14px; font-weight:600}
+.how .n{display:flex; gap:10px}
+.how .n em{flex:none; width:22px; height:22px; border-radius:50%; background:var(--muted); font-style:normal; font-size:12px; display:flex; align-items:center; justify-content:center; margin-top:1px}
 .verdict{border:1px solid var(--bd); border-radius:14px; padding:14px; margin-bottom:16px}
 .verdict.vi{background:var(--vi-bg); border-color:var(--vi-bd)}
 .verdict.am{background:var(--am-bg); border-color:var(--am-bd)}
@@ -232,6 +252,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
 
     <div class="list" id="list"></div>
     <div class="lg" id="legend" hidden><span class="a">저점 근처</span><span class="b">새 최저가</span><span>그 밖</span></div>
+    <p class="lead" id="legendNote" hidden style="margin-top:8px">칩의 숫자는 그 기간에 <b>가장 쌌던 가격보다 지금이 몇 % 비싼지</b>예요. 숫자가 작을수록 바닥에 가까워요.</p>
     <button class="more" id="more" hidden></button>
 
     <h2>최근 알림</h2>
@@ -254,7 +275,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
   var PERIODS = [["w","1주"],["m","1개월"],["q","3개월"],["h","6개월"],["y","12개월"],["a","역대"]];
   var TAGS = {NEWLOW:["신저가 갱신","am"], REBOUND:["저점 반등","gr"], LOW:["저점권","vi"], SHORT:["단기 저점","vo"], HIGH:["고점권","mu"], MID:["중간","mu"], NONE:["준비 중","mu"]};
   var FILTERS = [["ALL","전체"],["WATCH","관심"],["BUY","매수 후보"],["SELL","매도 후보"],["LOW","저점권"],["NEWLOW","신저가"],["REBOUND","저점 반등"]];
-  var VIEWS = [["simple","간단히"],["chips","저점 칩"],["chg","변동률"]];
+  var VIEWS = [["simple","간단히"],["chips","저점 칩"]];
   var VERDICT = {
     NEWLOW:["신저가 갱신","am","더 내려갈 수 있는 상태예요. 반등이 확인될 때까지 지켜보세요."],
     REBOUND:["저점 반등","gr","저점에서 4% 이상 올라서고 3일 전보다 높을 때 표시돼요."],
@@ -297,6 +318,10 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     if(n < 60) return n + "일 전";
     if(n < 700) return Math.round(n / 30) + "개월 전";
     return (n / 365).toFixed(1) + "년 전";
+  }
+  function eunneun(label){   // 받침이 있으면 "은", 없으면 "는"
+    var c = label.charCodeAt(label.length - 1) - 0xAC00;
+    return (c >= 0 && c <= 11171 && c % 28 !== 0) ? "은" : "는";
   }
   function tone(v){ return v == null ? "mu" : v >= 0 ? "up" : "down" }
 
@@ -355,18 +380,6 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     });
     return g;
   }
-  function grid7(c, flat){
-    var g = el("div", flat ? "grid7" : "g3 grid7");
-    if(!flat) g.className = "grid7";
-    if(!flat) g.style.marginTop = "12px";
-    SORTS.forEach(function(s){
-      var v = c.ch[s[0]], cell = el("div", "cell" + (s[0] === S.sort ? " sel" : ""));
-      cell.appendChild(el("i", null, s[1]));
-      cell.appendChild(el("b", "num " + tone(v), v == null ? "-" : fmtPct(v)));
-      g.appendChild(cell);
-    });
-    return g;
-  }
   function card(c){
     var b = el("button", "card");
     b.onclick = function(){ location.hash = encodeURIComponent((S.ex === "upbit" ? "upbit-" : "") + c.s) };
@@ -383,7 +396,6 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     var pr = el("span", "num", fmtPrice(c.p) + "원"); r.appendChild(pr);
     top.appendChild(l); top.appendChild(r); b.appendChild(top);
     if(S.view === "chips") b.appendChild(chips(c));
-    else if(S.view === "chg") b.appendChild(grid7(c, false));
     return b;
   }
 
@@ -418,7 +430,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     var all = sortedCoins(), list = $("list"); list.textContent = "";
     if(!all.length) list.appendChild(el("div", "empty", "해당하는 코인이 없어요."));
     all.slice(0, S.shown).forEach(function(c){ list.appendChild(card(c)) });
-    $("legend").hidden = S.view !== "chips";
+    $("legend").hidden = S.view !== "chips"; $("legendNote").hidden = S.view !== "chips";
     var more = $("more");
     if(all.length > S.shown){
       more.hidden = false; more.textContent = "더 보기 (" + Math.min(30, all.length - S.shown) + "개 더, 남은 " + (all.length - S.shown) + "개)";
@@ -555,39 +567,101 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     var d1 = c.ch.d, dd = el("div", "num " + tone(d1), "1일 " + (d1 == null ? "-" : fmtPct(d1))); dd.style.cssText = "font-size:13.5px;font-weight:600;text-align:right";
     rr.appendChild(dd); dh.appendChild(l); dh.appendChild(rr); v.appendChild(dh);
 
-    var vd = VERDICT[c.tag] || VERDICT.NONE, ve = el("div", "verdict " + vd[1]);
-    ve.appendChild(el("h3", null, vd[0]));
-    if(c.tag === "LOW"){
-      var zs = [["a","역대"],["q","3개월"],["h","6개월"],["y","12개월"]].filter(function(p){ return inZone(p[0], c.p, c.lo[p[0]], age) }).map(function(p){ return p[1] });
-      ve.appendChild(el("p", null, "저점 근처인 기간: " + zs.join(", ") + "."));
-    } else if(c.tag !== "NONE") ve.appendChild(el("p", null, c.tg + "."));
-    ve.appendChild(el("p", null, vd[2]));
-    v.appendChild(ve);
+    // ① 한눈에 보기
+    var tgs = TAGS[c.tag] || TAGS.NONE, cls = c.tag === "NEWLOW" ? "am" : c.tag === "REBOUND" ? "gr" : (c.tag === "LOW" || c.tag === "SHORT") ? "vi" : "";
+    var sm = el("div", "sm " + cls), smt = el("div", "t");
+    smt.appendChild(document.createTextNode("한눈에 보기")); smt.appendChild(el("span", "bdg " + tgs[1], tgs[0]));
+    sm.appendChild(smt);
+    function ln(color, before, bold, after){
+      var d = el("div", "ln"), i = el("i"); i.style.background = color; d.appendChild(i);
+      var t = el("div"); if(before) t.appendChild(document.createTextNode(before));
+      if(bold) t.appendChild(el("b", null, bold)); if(after) t.appendChild(document.createTextNode(after));
+      d.appendChild(t); sm.appendChild(d);
+    }
+    var P5 = [["w","1주"],["m","1개월"],["q","3개월"],["h","6개월"],["y","12개월"]];
+    var zones = P5.filter(function(p){ return inZone(p[0], c.p, c.lo[p[0]], age) }).map(function(p){ return p[1] });
+    var aZone = inZone("a", c.p, c.lo.a, age);
+    if(c.tag === "NONE"){
+      ln("var(--mfg)", "일봉 데이터를 받는 중이에요. 다음 자동 실행 뒤에 보여요.");
+    } else if(c.tag === "NEWLOW"){
+      ln("var(--am)", "", c.tg, ".");
+      ln("var(--mfg)", "더 내려갈 수 있는 상태예요. 반등이 확인될 때까지 지켜보세요.");
+    } else if(c.tag === "REBOUND"){
+      ln("var(--gr)", "", c.tg, ".");
+      ln("var(--mfg)", "가장 쌌던 가격보다 4% 넘게 오르고 3일 전보다 높을 때 표시돼요.");
+    } else {
+      var labels = zones.slice(); if(aZone) labels.push("상장 이후");
+      if(labels.length) ln("var(--vi)", "", labels.join("·"), " 동안 가장 싼 쪽에 있어요.");
+      var mids = [], highs = [];
+      P5.forEach(function(p){ var lo = c.lo[p[0]]; if(!lo || zones.indexOf(p[1]) >= 0) return; (posOf(c.p, lo) >= 0.85 ? highs : mids).push(p[1]) });
+      var parts = [];
+      if(mids.length) parts.push(mids.join("·") + eunneun(mids[mids.length - 1]) + " 중간쯤이에요.");
+      if(highs.length) parts.push(highs.join("·") + eunneun(highs[highs.length - 1]) + " 비싼 쪽이에요.");
+      if(c.lo.a && age >= 90 && !aZone) parts.push("상장 이후로 보면 가장 쌌던 가격보다 " + fmtPct(c.p / c.lo.a[0] - 1, 0).replace("+", "") + " 비싸요.");
+      if(parts.length) ln("var(--mfg)", parts.join(" "));
+      if(labels.length) ln("var(--am)", "아직 ", "오르기 시작한 건 아니에요.", " 가장 쌌던 가격보다 4% 넘게 오르면 \"저점 반등\"으로 알려 드려요.");
+      if(!parts.length && !labels.length) ln("var(--mfg)", "아직 판단할 데이터가 부족해요.");
+    }
+    v.appendChild(sm);
 
-    var s1 = section("기간별 저점 지도", "일봉 최저가·최고가 기준"), card1 = el("div", "card rows");
+    // ② 기간별로 얼마나 싼가
+    var s1 = section("기간별로 얼마나 싼가"), lead1 = el("p", "lead");
+    lead1.appendChild(document.createTextNode("막대 왼쪽 끝은 그 기간에 "));
+    lead1.appendChild(el("b", null, "가장 쌌던 가격"));
+    lead1.appendChild(document.createTextNode(", 오른쪽 끝은 "));
+    lead1.appendChild(el("b", null, "가장 비쌌던 가격"));
+    lead1.appendChild(document.createTextNode("이에요. 점이 지금 가격이고, 보라색 칸에 있으면 가장 싼 쪽이에요."));
+    s1.appendChild(lead1);
+    var card1 = el("div", "card rows");
     PERIODS.forEach(function(p){
-      var key = p[0], lo = c.lo[key], zone = inZone(key, c.p, lo, age), row = el("div", "row" + (key === "a" && zone ? " hl" : "")), rt = el("div", "rt");
-      rt.appendChild(el("b", null, key === "a" ? "역대 (상장 이후)" : p[1]));
+      var key = p[0], lo = c.lo[key], row = el("div", "row"), rt = el("div", "rt");
+      rt.appendChild(el("b", null, key === "a" ? "상장 이후" : p[1]));
       if(!lo){
-        rt.appendChild(el("span", null, "상장 후 기간이 짧아 표시하지 않아요")); row.appendChild(rt); card1.appendChild(row); return;
+        rt.appendChild(el("span", "bdg mu", "기록 없음")); row.appendChild(rt);
+        row.appendChild(el("div", "s mu", "상장한 지 " + (age ? "약 " + age + "일이라 " : "얼마 안 돼서 ") + "이 기간은 보여 드릴 수 없어요."));
+        card1.appendChild(row); return;
       }
-      var isNew = isNewLow(c.p, lo) && (key !== "a" || age >= 90), pos = posOf(c.p, lo);
-      rt.appendChild(el("span", "num", "최저 " + fmtPrice(lo[0]) + "원 · " + daysText(lo[2])));
-      row.appendChild(rt);
-      var bar = el("div", "bar"), zw = key === "a" ? Math.min(100, Math.max(2, (0.30 * lo[0] / Math.max(lo[1] - lo[0], 1e-12)) * 100)) : 15;
+      var young = key === "a" && age < 90, zone = !young && inZone(key, c.p, lo, age), isNew = !young && isNewLow(c.p, lo), pos = posOf(c.p, lo);
+      var bd = young ? ["판정 안 함", "mu"] : isNew ? ["새 최저가", "am"] : zone ? ["가장 싼 쪽", "vi"] : key === "a" ? ["저점에서 먼 편", "mu"] : pos >= 0.85 ? ["비싼 쪽", "mu"] : ["중간", "mu"];
+      rt.appendChild(el("span", "bdg " + bd[1], bd[0])); row.appendChild(rt);
+      var sent = el("div", "s"), hot = isNew ? "am-t" : zone ? "vi-t" : "";
+      if(isNew){
+        sent.appendChild(document.createTextNode("오늘 가장 싼 가격을 새로 썼어요"));
+        if(c.pl && c.pl[key]) sent.appendChild(document.createTextNode(" (이전 " + fmtPrice(c.pl[key]) + "원)"));
+      } else {
+        sent.appendChild(document.createTextNode((key === "a" ? "상장 이후 " : "") + "가장 쌌던 가격 "));
+        sent.appendChild(el("b", "num", fmtPrice(lo[0]) + "원")); sent.appendChild(document.createTextNode(" (" + daysText(lo[2]) + ") → 지금은 그보다 "));
+        sent.appendChild(el("b", "num " + hot, fmtPct(c.p / lo[0] - 1).replace("+", "") + " 비싸요"));
+        if(young) sent.appendChild(document.createTextNode(" · 상장 " + age + "일이라 90일이 지나면 판정해요"));
+      }
+      row.appendChild(sent);
+      var bw = el("div", "bw"), bar = el("div", "bar");
+      var zw = key === "a" ? Math.min(100, Math.max(2, (0.30 * lo[0] / Math.max(lo[1] - lo[0], 1e-12)) * 100)) : 15;
       var fill = el("s"); fill.style.width = zw + "%"; bar.appendChild(fill);
       var u = el("u");
       if(isNew){ u.className = "nl"; u.style.left = "0%"; u.style.marginLeft = "-4px" } else u.style.left = (pos * 100).toFixed(1) + "%";
-      bar.appendChild(u); row.appendChild(bar);
-      var rb = el("div", "rb"), up = c.p / lo[0] - 1;
-      rb.appendChild(el("span", "lo num " + (isNew ? "am-t" : zone ? "vi-t" : ""), isNew ? "새 최저가" : "저점 대비 " + fmtPct(up)));
-      rb.appendChild(el("span", "mu num", key === "a" ? "범위의 아래쪽 " + Math.round(pos * 100) + "% · 최고 " + fmtPrice(lo[1]) + "원" : "범위의 아래쪽 " + Math.round(pos * 100) + "%"));
-      row.appendChild(rb); card1.appendChild(row);
+      u.appendChild(el("i", null, "지금")); bar.appendChild(u); bw.appendChild(bar); row.appendChild(bw);
+      var ends = el("div", "ends"); ends.appendChild(el("span", "num", "가장 쌈 " + fmtPrice(lo[0]) + "원")); ends.appendChild(el("span", "num", "가장 비쌈 " + fmtPrice(lo[1]) + "원"));
+      row.appendChild(ends); card1.appendChild(row);
     });
     s1.appendChild(card1); v.appendChild(s1);
 
-    var s2 = section("기간별 변동률", "지금 가격 ÷ 그때 종가"), card2 = el("div", "card");
-    card2.appendChild(grid7(c, true)); s2.appendChild(card2); v.appendChild(s2);
+    // ③ 기간별 변동률 (그때 가격까지 보여 줘요)
+    var s2 = section("기간별 변동률"), lead2 = el("p", "lead", "그때 가격과 비교해서 지금이 몇 % 높고 낮은지예요. 빨강은 올랐다는 뜻, 파랑은 내렸다는 뜻이에요.");
+    s2.appendChild(lead2);
+    var card2 = el("div", "card"), g = el("div", "grid7"), example = null;
+    SORTS.forEach(function(sp){
+      var chv = c.ch[sp[0]], cell = el("div", "cell" + (sp[0] === S.sort ? " sel" : ""));
+      cell.appendChild(el("i", null, sp[1] + " 전"));
+      cell.appendChild(el("b", "num " + tone(chv), chv == null ? "-" : fmtPct(chv)));
+      var ref = chv == null ? null : c.p / (1 + chv);
+      cell.appendChild(el("span", "num", ref == null ? "기록 없음" : fmtPrice(ref) + "원"));
+      if(chv != null && (sp[0] === S.sort || !example)) example = [sp[1], ref, chv];
+      g.appendChild(cell);
+    });
+    card2.appendChild(g);
+    if(example) card2.appendChild(el("p", "note", "칸 아래 작은 숫자가 그때 가격이에요. 예: " + example[0] + " 전 " + fmtPrice(example[1]) + "원 → 지금 " + fmtPrice(c.p) + "원이라 " + fmtPct(Math.abs(example[2])).replace("+", "") + " " + (example[2] >= 0 ? "올랐어요." : "내렸어요.")));
+    s2.appendChild(card2); v.appendChild(s2);
     v.appendChild(chartSection(c));
 
     var s3 = section("신호와 알림"), card3 = el("div", "card");
@@ -612,6 +686,16 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
       p.style.marginTop = "0"; card3.appendChild(p);
     }
     s3.appendChild(card3); v.appendChild(s3);
+
+    var sh = section("숫자 보는 법", "이 코인 기준"), how = el("div", "card how");
+    var exK = null; ["m", "q", "w", "h", "y"].some(function(k){ if(c.lo[k]){ exK = k; return true } return false });
+    function hn(no, nodes){ var d = el("div", "n"); d.appendChild(el("em", null, String(no))); var t = el("div"); nodes.forEach(function(x){ t.appendChild(typeof x === "string" ? document.createTextNode(x) : x) }); d.appendChild(t); how.appendChild(d) }
+    hn(1, [el("b", null, "가장 쌌던 가격"), ": 그 기간 중 하루 동안 가장 낮았던 가격이에요. 1주는 최근 7일, 1개월은 30일이에요."]);
+    var n2 = [el("b", null, "○% 비싸요"), ": 지금 가격이 그 가격보다 얼마나 높은지예요."];
+    if(exK){ var l0 = c.lo[exK][0]; n2.push(" 이 코인은 "); n2.push(el("code", null, fmtPrice(c.p) + " ÷ " + fmtPrice(l0) + " = " + (c.p / l0).toFixed(3))); n2.push("이라 " + fmtPct(c.p / l0 - 1).replace("+", "") + " 비싸요.") }
+    hn(2, n2);
+    hn(3, [el("b", null, "가장 싼 쪽"), ": 막대에서 점이 왼쪽 15% 안(보라색 칸)에 있다는 뜻이에요. 상장 이후 기준은 가장 쌌던 가격보다 30% 이내예요. 싸다는 표시일 뿐, 더 내려가지 않는다는 보장은 아니에요."]);
+    sh.appendChild(how); v.appendChild(sh);
 
     v.appendChild(el("p", "foot", "저점은 지나고 나서야 확인할 수 있어요. 저점권은 가격이 그 기간 중 싼 쪽에 있다는 뜻일 뿐, 더 내려가지 않는다는 보장이 아니에요. 참고용이에요."));
     window.scrollTo(0, keepScroll ? y : 0);
