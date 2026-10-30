@@ -449,7 +449,7 @@ def run_once(cfg, demo=False):
             tg_send("\n\n".join(alerts[:8]) + tail)
     if os.environ.get("EVENT_NAME") == "workflow_dispatch":
         lines = [f"{x['name']} {fmt_price(x['price'])}원 {x['signal']}" for x in markets if x["status"] == "ok"]
-        tg_send("✅ 코인 신호판 연결 확인\n" + ("\n".join(lines) or "시세를 가져오지 못했어요") + tail)
+        tg_send("✅ 그러다 고래된다 연결 확인\n" + ("\n".join(lines) or "시세를 가져오지 못했어요") + tail)
 
     for c in coins:  # 화면 데이터가 작아지도록 빈 값은 빼요
         if not c.get("pl"):
@@ -513,7 +513,7 @@ def main():
         except Exception as e:
             import traceback
             traceback.print_exc()
-            tg_send("⚠️ 코인 신호판 프로그램 오류\n" + describe_error(e) + "\n이 메시지를 그대로 알려 주시면 고칠 수 있어요.")
+            tg_send("⚠️ 그러다 고래된다 프로그램 오류\n" + describe_error(e) + "\n이 메시지를 그대로 알려 주시면 고칠 수 있어요.")
             if not args.loop:
                 sys.exit(1)
             time.sleep(args.loop)
