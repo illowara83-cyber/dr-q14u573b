@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0F1318" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F5F6F8" media="(prefers-color-scheme: light)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="robots" content="noindex">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>코인 신호판</title>
+<style>
+:root{
+  --bg:#F5F6F8; --card:#FFFFFF; --ink:#151A20; --muted:#667085; --line:#E3E6EA;
+  --up:#D8403F; --down:#2F6FDB;
+  --buy:#177A4F; --buy-bg:#E3F3EA; --sell:#B4500B; --sell-bg:#FBEBDD; --wait:#667085; --wait-bg:#EEF0F3;
+  --warn-bg:#FFF4D6; --warn-ink:#6B4B00; --accent:#177A4F;
+  color-scheme:light;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0F1318; --card:#181D24; --ink:#E8ECF1; --muted:#98A2B3; --line:#272E38;
+    --up:#FF7A7A; --down:#6EA2FF;
+    --buy:#4CD08A; --buy-bg:#14301F; --sell:#F0A15B; --sell-bg:#3A2614; --wait:#98A2B3; --wait-bg:#222932;
+    --warn-bg:#3A3015; --warn-ink:#F0D58A; --accent:#4CD08A;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0F1318; --card:#181D24; --ink:#E8ECF1; --muted:#98A2B3; --line:#272E38;
+  --up:#FF7A7A; --down:#6EA2FF;
+  --buy:#4CD08A; --buy-bg:#14301F; --sell:#F0A15B; --sell-bg:#3A2614; --wait:#98A2B3; --wait-bg:#222932;
+  --warn-bg:#3A3015; --warn-ink:#F0D58A; --accent:#4CD08A;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font:16px/1.45 system-ui,-apple-system,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;
+  -webkit-tap-highlight-color:transparent;
+}
+button{font:inherit; color:inherit; background:none; border:0; padding:0; cursor:pointer}
+.wrap{max-width:560px; margin:0 auto; padding:14px 14px 40px}
+.num{font-variant-numeric:tabular-nums}
+
+/* 상단 */
+.top{display:flex; align-items:center; justify-content:space-between; gap:10px; margin:2px 0 12px}
+.top h1{margin:0; font-size:21px; letter-spacing:-.01em}
+.stat{display:flex; align-items:center; gap:7px; font-size:13px; color:var(--muted)}
+.dot{width:9px; height:9px; border-radius:50%; background:var(--wait)}
+.dot.ok{background:var(--buy)} .dot.old{background:#E0A100} .dot.bad{background:var(--up)}
+.rf{min-width:44px; min-height:44px; margin:-8px -10px -8px 0; font-size:20px; color:var(--muted)}
+.stale{margin:0 0 12px; padding:10px 12px; border-radius:10px; background:var(--warn-bg); color:var(--warn-ink); font-size:14px}
+
+/* 필터 */
+.filters{display:flex; gap:8px; margin-bottom:12px}
+.chip{
+  flex:1; min-height:48px; padding:6px 4px; border:1.5px solid var(--line); border-radius:12px; background:var(--card);
+  display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1.15;
+}
+.chip b{font-size:18px}
+.chip span{font-size:12px; color:var(--muted)}
+.chip.on{border-color:var(--ink)}
+
+/* 카드 */
+.card{background:var(--card); border:1px solid var(--line); border-radius:14px; margin-bottom:10px; overflow:hidden}
+.card>button{display:block; width:100%; text-align:left; padding:13px 14px 10px}
+.r1{display:flex; justify-content:space-between; align-items:baseline; gap:10px}
+.nm{font-weight:700; font-size:17px}
+.tk{font-size:12px; color:var(--muted); margin-left:6px; font-weight:400}
+.pr{font-size:19px; font-weight:700}
+.pr small{font-size:12px; font-weight:400; color:var(--muted); margin-left:2px}
+.r2{display:flex; justify-content:space-between; align-items:center; margin-top:6px}
+.chg{font-size:14px; font-weight:600}
+.up{color:var(--up)} .down{color:var(--down)}
+.badge{font-size:13px; font-weight:700; padding:3px 10px; border-radius:999px}
+.badge.BUY{color:var(--buy); background:var(--buy-bg)}
+.badge.SELL{color:var(--sell); background:var(--sell-bg)}
+.badge.WAIT{color:var(--wait); background:var(--wait-bg)}
+.spark{display:block; width:100%; height:46px; margin-top:8px}
+.det{display:none; padding:2px 14px 14px; border-top:1px dashed var(--line); font-size:14px}
+.card.open .det{display:block}
+.kv{display:flex; justify-content:space-between; padding:7px 0 2px}
+.kv span:first-child{color:var(--muted)}
+.rs{position:relative; height:8px; border-radius:4px; margin:8px 0 2px;
+  background:linear-gradient(90deg,var(--down) 0 30%,var(--wait-bg) 30% 70%,var(--up) 70% 100%); opacity:.9}
+.rs i{position:absolute; top:-4px; width:4px; height:16px; border-radius:2px; background:var(--ink); transform:translateX(-2px)}
+.why{margin:8px 0 0; padding-left:18px; color:var(--ink)}
+.why li{margin:2px 0}
+.tgt{margin-top:10px; padding:9px 11px; border-radius:10px; background:var(--wait-bg); font-size:13.5px}
+.err{padding:12px 14px; color:var(--muted); font-size:14px}
+
+h2{font-size:16px; margin:22px 2px 8px}
+.log{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:2px 14px}
+.li{padding:11px 0; border-bottom:1px solid var(--line); font-size:14px; white-space:pre-line}
+.li:last-child{border-bottom:0}
+.li time{display:block; font-size:12px; color:var(--muted); margin-bottom:2px}
+.empty{padding:16px 0; color:var(--muted); font-size:14px}
+.foot{margin:18px 2px 0; color:var(--muted); font-size:12.5px; line-height:1.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>코인 신호판</h1>
+    <div class="stat"><span class="dot" id="dot"></span><span id="ago">불러오는 중</span>
+      <button class="rf" id="rf" aria-label="새로고침">↻</button></div>
+  </div>
+  <div id="stale" class="stale" hidden></div>
+  <div class="filters" id="filters"></div>
+  <div id="list"></div>
+  <h2>최근 알림</h2>
+  <div class="log" id="log"><div class="empty">아직 알림이 없어요.</div></div>
+  <p class="foot" id="foot"></p>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var $ = function(i){ return document.getElementById(i) };
+  var DATA = null, FILTER = "ALL", OPEN = {};
+  var LABEL = {BUY:"▲ 매수 후보", SELL:"▼ 매도 후보", WAIT:"관망"};
+
+  function el(tag, cls, text){ var d = document.createElement(tag); if(cls) d.className = cls; if(text != null) d.textContent = text; return d }
+  function fmtPrice(p){
+    if(p >= 1000) return p.toLocaleString("ko-KR", {maximumFractionDigits:0});
+    if(p >= 100)  return p.toLocaleString("ko-KR", {minimumFractionDigits:1, maximumFractionDigits:1});
+    if(p >= 10)   return p.toLocaleString("ko-KR", {minimumFractionDigits:2, maximumFractionDigits:2});
+    return p.toLocaleString("ko-KR", {minimumFractionDigits:4, maximumFractionDigits:4});
+  }
+  function fmtPct(x){ var v = x * 100; return (v > 0 ? "+" : "") + v.toFixed(1) + "%" }
+  function agoText(iso){
+    var m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+    if(m < 1) return "방금 업데이트";
+    if(m < 60) return m + "분 전 업데이트";
+    var h = Math.floor(m / 60);
+    return h < 24 ? h + "시간 전 업데이트" : Math.floor(h / 24) + "일 전 업데이트";
+  }
+  function kst(iso){
+    var d = new Date(new Date(iso).getTime() + 9 * 3600 * 1000);
+    var p = function(n){ return (n < 10 ? "0" : "") + n };
+    return (d.getUTCMonth() + 1) + "/" + d.getUTCDate() + " " + p(d.getUTCHours()) + ":" + p(d.getUTCMinutes());
+  }
+
+  function spark(vals, up){
+    var w = 300, h = 46, pad = 3;
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals), rng = (max - min) || 1;
+    var pts = vals.map(function(v, i){
+      var x = pad + (w - 2 * pad) * i / Math.max(1, vals.length - 1);
+      var y = pad + (h - 2 * pad) * (1 - (v - min) / rng);
+      return x.toFixed(1) + "," + y.toFixed(1);
+    }).join(" ");
+    var ns = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 " + w + " " + h); svg.setAttribute("preserveAspectRatio", "none"); svg.setAttribute("class", "spark");
+    svg.setAttribute("aria-hidden", "true");
+    var pl = document.createElementNS(ns, "polyline");
+    pl.setAttribute("points", pts); pl.setAttribute("fill", "none"); pl.setAttribute("stroke-width", "2");
+    pl.setAttribute("stroke", up ? "var(--up)" : "var(--down)"); pl.setAttribute("stroke-linejoin", "round"); pl.setAttribute("stroke-linecap", "round");
+    pl.setAttribute("vector-effect", "non-scaling-stroke");
+    svg.appendChild(pl);
+    return svg;
+  }
+
+  function sorted(list){
+    var rank = {BUY:0, SELL:1, WAIT:2};
+    return list.map(function(m, i){ return {m:m, i:i} }).sort(function(a, b){
+      var ra = a.m.status === "ok" ? rank[a.m.signal] : 3, rb = b.m.status === "ok" ? rank[b.m.signal] : 3;
+      if(ra !== rb) return ra - rb;
+      if(ra < 2) return Math.abs(b.m.score) - Math.abs(a.m.score);
+      return a.i - b.i;
+    }).map(function(x){ return x.m });
+  }
+
+  function renderFilters(list){
+    var c = {BUY:0, SELL:0, WAIT:0};
+    list.forEach(function(m){ if(m.status === "ok") c[m.signal]++ });
+    var box = $("filters"); box.textContent = "";
+    [["ALL","전체", list.length], ["BUY","매수 후보", c.BUY], ["SELL","매도 후보", c.SELL]].forEach(function(f){
+      var b = el("button", "chip" + (FILTER === f[0] ? " on" : ""));
+      b.appendChild(el("b", "num", String(f[2]))); b.appendChild(el("span", null, f[1]));
+      b.onclick = function(){ FILTER = (FILTER === f[0] && f[0] !== "ALL") ? "ALL" : f[0]; render() };
+      box.appendChild(b);
+    });
+  }
+
+  function card(m){
+    var c = el("div", "card" + (OPEN[m.market] ? " open" : ""));
+    if(m.status !== "ok"){
+      var h = el("div", "err"); h.textContent = m.name + " (" + m.market + ") 시세를 가져오지 못했어요.";
+      c.appendChild(h); return c;
+    }
+    var b = el("button"); b.setAttribute("aria-expanded", OPEN[m.market] ? "true" : "false");
+    var r1 = el("div", "r1");
+    var nm = el("div", "nm", m.name); nm.appendChild(el("span", "tk", m.market.replace("KRW-", "")));
+    var pr = el("div", "pr num", fmtPrice(m.price)); pr.appendChild(el("small", null, "원"));
+    r1.appendChild(nm); r1.appendChild(pr);
+    var r2 = el("div", "r2");
+    var chg = el("div", "chg num " + (m.chg >= 0 ? "up" : "down"), "1시간 " + fmtPct(m.chg));
+    r2.appendChild(chg); r2.appendChild(el("span", "badge " + m.signal, LABEL[m.signal]));
+    b.appendChild(r1); b.appendChild(r2);
+    if(m.spark && m.spark.length > 1) b.appendChild(spark(m.spark, m.spark[m.spark.length - 1] >= m.spark[0]));
+    b.onclick = function(){ OPEN[m.market] = !OPEN[m.market]; c.classList.toggle("open"); b.setAttribute("aria-expanded", OPEN[m.market] ? "true" : "false") };
+    c.appendChild(b);
+
+    var d = el("div", "det");
+    var k1 = el("div", "kv"); k1.appendChild(el("span", null, "점수 (매수 +4 이상 · 매도 -4 이하)")); k1.appendChild(el("span", "num", (m.score > 0 ? "+" : "") + m.score)); d.appendChild(k1);
+    if(m.rsi != null){
+      var k2 = el("div", "kv"); k2.appendChild(el("span", null, "RSI (30 이하 과매도 · 70 이상 과매수)")); k2.appendChild(el("span", "num", m.rsi.toFixed(0))); d.appendChild(k2);
+      var rs = el("div", "rs"); var i = el("i"); i.style.left = Math.max(0, Math.min(100, m.rsi)) + "%"; rs.appendChild(i); d.appendChild(rs);
+    }
+    if(m.reasons && m.reasons.length){
+      var ul = el("ul", "why"); m.reasons.forEach(function(r){ ul.appendChild(el("li", null, r)) }); d.appendChild(ul);
+    } else { d.appendChild(el("div", "empty", "특별한 신호가 없어요.")) }
+    if(m.target || m.stop){
+      var t = el("div", "tgt num");
+      var parts = [];
+      if(m.target) parts.push("목표가 " + fmtPrice(m.target) + "원 (" + fmtPct(m.target / m.price - 1) + ")");
+      if(m.stop) parts.push("손절가 " + fmtPrice(m.stop) + "원 (" + fmtPct(m.stop / m.price - 1) + ")");
+      t.textContent = parts.join("  ·  "); d.appendChild(t);
+    }
+    c.appendChild(d);
+    return c;
+  }
+
+  function render(){
+    if(!DATA) return;
+    var list = sorted(DATA.markets);
+    renderFilters(DATA.markets);
+    var box = $("list"); box.textContent = "";
+    var shown = list.filter(function(m){ return FILTER === "ALL" || (m.status === "ok" && m.signal === FILTER) });
+    if(!shown.length) box.appendChild(el("div", "empty", "해당하는 종목이 없어요."));
+    shown.forEach(function(m){ box.appendChild(card(m)) });
+
+    var log = $("log"); log.textContent = "";
+    if(!DATA.alerts || !DATA.alerts.length){ log.appendChild(el("div", "empty", "아직 알림이 없어요.")) }
+    else DATA.alerts.forEach(function(a){
+      var li = el("div", "li"); li.appendChild(el("time", "num", kst(a.t)));
+      li.appendChild(document.createTextNode(a.text)); log.appendChild(li);
+    });
+    $("foot").textContent = "기준: " + DATA.exchange + " " + DATA.unit + "분봉 · 한국 시간 " + DATA.updated_kst +
+      ". RSI, MACD, 볼린저밴드, 이동평균 교차를 합산한 참고용 신호이며 수익을 보장하지 않아요. 상승은 빨강, 하락은 파랑으로 표시해요.";
+    tick();
+  }
+
+  function tick(){
+    if(!DATA) return;
+    var min = (Date.now() - new Date(DATA.updated).getTime()) / 60000;
+    $("ago").textContent = agoText(DATA.updated);
+    $("dot").className = "dot " + (min < 25 ? "ok" : min < 60 ? "old" : "bad");
+    var st = $("stale");
+    if(min >= 60){ st.hidden = false; st.textContent = "한 시간 넘게 업데이트가 없어요. GitHub의 Actions 탭에서 자동 실행이 멈춰 있지 않은지 확인해 주세요." }
+    else st.hidden = true;
+  }
+
+  function load(){
+    fetch("data.json?t=" + Date.now(), {cache:"no-store"})
+      .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json() })
+      .then(function(d){ DATA = d; render() })
+      .catch(function(){
+        if(!DATA){ $("ago").textContent = "데이터가 아직 없어요"; $("dot").className = "dot bad";
+          $("list").textContent = ""; $("list").appendChild(el("div", "empty", "첫 자동 실행이 끝나면 여기에 나타나요. (설정 후 최대 10~15분)")) }
+      });
+  }
+
+  $("rf").onclick = load;
+  document.addEventListener("visibilitychange", function(){ if(!document.hidden) load() });
+  setInterval(load, 60000);
+  setInterval(tick, 30000);
+  load();
+})();
+</script>
+</body>
+</html>
