@@ -3,12 +3,12 @@
   "fallback_exchange": null,
   "unit": 60,
   "markets": [
+    "KRW-PCI",
     "KRW-BTC",
     "KRW-ETH",
     "KRW-XRP",
     "KRW-SOL",
-    "KRW-DOGE",
-    "KRW-PCI"
+    "KRW-DOGE"
   ],
   "market_exchange": {},
   "buy_threshold": 4,
@@ -32,5 +32,17 @@
     }
   },
   "min_trade_value_24h": 0,
-  "upbit": true
+  "upbit": true,
+  "pin": [
+    "KRW-PCI"
+  ],
+  "telegram": {
+    "digest": true,
+    "digest_size": 5,
+    "digest_start": 7,
+    "digest_every_hours": 6,
+    "quiet_from": 22,
+    "quiet_to": 7,
+    "instant_alerts": false
+  }
 }

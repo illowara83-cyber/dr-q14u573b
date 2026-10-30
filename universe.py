@@ -31,11 +31,16 @@ MIN_AGE_A = 90      # 상장한 지 90일이 안 된 코인은 역대 판정을 
 REBOUND_PCT = 0.04  # 저점에서 4% 이상 올라서면 반등
 REBOUND_DAYS = 14   # 저점이 최근 14일 안이어야 반등으로 봐요
 UPBIT_THROTTLE = 0.25  # 업비트 요청 사이 쉬는 시간(초) - 요청 제한을 넘지 않게
+HOURS = 169            # 시간봉 보관 개수: 지금 + 7일(168시간)
 
 
 # ───────────────────────── 유틸 ─────────────────────────
 def sig(x):
     return float(f"{x:.6g}")
+
+
+def sig5(x):
+    return float(f"{x:.5g}")
 
 
 def today_kst():
@@ -104,7 +109,14 @@ def bithumb_rows(sym, prev):
             continue
         rows.append((datetime.fromtimestamp(ts / 1000, KST).strftime("%Y-%m-%d"), o, h, l, c))
     rows.sort(key=lambda x: x[0])
-    return rows[-5000:], None
+    hourly = None
+    try:  # 1일·1주 차트용 시간봉 (실패해도 괜찮아요)
+        h = cs.http_json(f"{BASES['bithumb']}/public/candlestick/{sym}_KRW/1h")
+        if h.get("status") == "0000" and h.get("data"):
+            hourly = [float(x[2]) for x in sorted(h["data"], key=lambda x: int(x[0]))][-HOURS:]
+    except Exception:
+        hourly = None
+    return rows[-5000:], None, hourly
 
 
 # ───────────────────────── 업비트 API ─────────────────────────
@@ -180,7 +192,15 @@ def upbit_rows(sym, prev, total=800):
             hi = max(months, key=lambda r: float(r["high_price"]))
             ext = {"low": [float(lo["low_price"]), lo["candle_date_time_kst"][:10]],
                    "high": [float(hi["high_price"]), hi["candle_date_time_kst"][:10]]}
-    return out, ext
+    hourly = None
+    try:  # 1일·1주 차트용 시간봉 (실패해도 괜찮아요)
+        hp = cs.http_json(f"{base}/v1/candles/minutes/60?market=KRW-{sym}&count=200")
+        time.sleep(UPBIT_THROTTLE)
+        if hp:
+            hourly = [float(x["trade_price"]) for x in sorted(hp, key=lambda x: x["candle_date_time_utc"])][-HOURS:]
+    except Exception:
+        hourly = None
+    return out, ext, hourly
 
 
 # ───────────────────────── 시험용(가짜) 데이터 ─────────────────────────
@@ -199,6 +219,13 @@ def demo_series(sym):
     return [((today - timedelta(days=n - 1 - i)).strftime("%Y-%m-%d"), c.o, c.h, c.l, c.c) for i, c in enumerate(cands)]
 
 
+def demo_hourly(sym):
+    closes = [c.c for c in cs.demo_candles(sym, 800)[-HOURS:]]
+    last = demo_series(sym)[-1][4]
+    k = last / closes[-1]
+    return [x * k for x in closes]
+
+
 def demo_symbols(ex):
     return DEMO_UPBIT if ex == "upbit" else DEMO_SYMBOLS
 
@@ -212,11 +239,30 @@ def demo_tickers(ex):
 
 
 # ───────────────────────── 통계 ─────────────────────────
-def make_stats(rows, today, ext=None):
+# 차트용: (기간 키, 기준일 수, 뽑는 간격) - 간격은 기준일 수를 나누어 떨어지게 해서 첫 점이 그때 종가가 돼요
+SERIES = [("m", 30, 1), ("q", 90, 2), ("h", 180, 3), ("y", 365, 5), ("y2", 730, 10)]
+
+
+def make_series(rows):
+    cl = [r[4] for r in rows]
+    out = {}
+    for key, k, step in SERIES:
+        if len(cl) > k:
+            seg = cl[-(k + 1):]
+            out[key] = [sig5(seg[i]) for i in range(0, len(seg), step)]
+    return out
+
+
+def make_stats(rows, today, ext=None, hourly=None, prev=None):
     n = len(rows)
     if n < 2:
         return None
     st = {"date": today, "n": n, "close": {}, "low": {}, "high": {}, "ldate": {}, "hdate": {}}
+    st["ser"] = make_series(rows)
+    if hourly:
+        st["hp"], st["hts"] = [sig5(x) for x in hourly[-HOURS:]], time.time()
+    elif prev and prev.get("hp"):
+        st["hp"], st["hts"] = prev["hp"], prev.get("hts", 0)
     for key, k in CLOSE_REFS:
         if n > k:
             st["close"][key] = rows[-1 - k][4]
@@ -239,6 +285,42 @@ def make_stats(rows, today, ext=None):
     st["low"]["a"], st["ldate"]["a"] = a_low[0], a_low[1]
     st["high"]["a"], st["hdate"]["a"] = a_high[0], a_high[1]
     return st
+
+
+def append_hourly(stat, p, now_ts):
+    """10분마다 도는 동안 한 시간에 한 번씩 현재가를 덧붙여서 1일·1주 차트를 이어 가요"""
+    hp = stat.setdefault("hp", [])
+    if now_ts - stat.get("hts", 0) >= 3000:
+        hp.append(sig5(p))
+        stat["hts"] = now_ts
+        del hp[:-HOURS]
+
+
+def chart_payload(stat, p):
+    """코인 하나의 기간별 차트 점들 (끝은 항상 현재가)"""
+    out = {}
+    if not stat:
+        return out
+    cur = sig5(p)
+    hp = stat.get("hp") or []
+    if len(hp) >= 3:
+        h = hp[-HOURS:] + [cur]
+        out["d"] = h[-25:]
+        w = h[-HOURS:]
+        out["w"] = [w[i] for i in range(len(w) - 1, -1, -3)][::-1]
+    for key, series in (stat.get("ser") or {}).items():
+        out[key] = series[:-1] + [cur]
+    return out
+
+
+def charts_for(st, ex, coins):
+    stats = st.get("u", {}).get(ex, {}).get("stats", {})
+    out = {}
+    for c in coins:
+        pl = chart_payload(stats.get(c["s"]), c["p"])
+        if pl:
+            out[c["s"]] = pl
+    return out
 
 
 def judge(p, coin):
@@ -337,7 +419,7 @@ def build(cfg, st, demo=False, ex="bithumb", budget=100):
     todo = [s for s in syms if (ust.get(s) or {}).get("date") != today or "a" not in (ust.get(s) or {}).get("low", {})]
 
     if demo:
-        fetch = lambda s: (demo_series(s), None)
+        fetch = lambda s: (demo_series(s), None, demo_hourly(s))
     elif ex == "bithumb":
         fetch = lambda s: bithumb_rows(s, ust.get(s))
     else:
@@ -354,13 +436,17 @@ def build(cfg, st, demo=False, ex="bithumb", budget=100):
             results = list(pool.map(lambda s: _safe(fetch, s), batch))
         for s, res in zip(batch, results):
             if res and res[0]:
-                stat = make_stats(res[0], today, res[1])
+                stat = make_stats(res[0], today, res[1], res[2] if len(res) > 2 else None, ust.get(s))
                 if stat:
                     ust[s] = stat
                     done += 1
     if todo:
         print(f"{EX_NAME[ex]} 일봉 갱신: {done}/{len(todo)}개")
 
+    now_ts = time.time()
+    for s in syms:
+        if ust.get(s):
+            append_hourly(ust[s], tick[s]["p"], now_ts)
     coins = [build_coin(ex, s, names.get(s, s), tick[s], ust.get(s), today) for s in syms]
     for s in list(ust):  # 상장폐지된 코인 정리
         if s not in tick:

@@ -54,6 +54,9 @@ DEFAULTS = {
     "dashboard_url": "",
     "min_trade_value_24h": 0,
     "upbit": True,
+    "pin": ["KRW-PCI"],
+    "telegram": {"digest": True, "digest_size": 5, "digest_start": 7, "digest_every_hours": 6,
+                 "quiet_from": 22, "quiet_to": 7, "instant_alerts": False},
     "alerts": {"signal_change": True, "spike": True, "spike_pct": 5, "spike_minutes": 60,
                "targets": True, "low_zone": True, "new_low": True, "rebound": True,
                "cooldown_minutes": 180},
@@ -134,7 +137,7 @@ def load_state():
 def save_state(st):
     os.makedirs(STATE_DIR, exist_ok=True)
     with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(st, f, ensure_ascii=False)
+        json.dump(st, f, ensure_ascii=False, separators=(",", ":"))
 
 
 def cooldown_ok(st, key, now, minutes):
@@ -344,6 +347,54 @@ def msg_low(m, coin, kind):
             f"{fmt_pct(p / base - 1)} 반등\n3일 전보다 높아요")
 
 
+# ───────────────────────── 텔레그램 시간표(하루 3번 하락 TOP) ─────────────────────────
+PERIOD_NAMES = [("d", "1일"), ("w", "1주"), ("m", "1개월"), ("q", "3개월"), ("h", "6개월"), ("y", "12개월"), ("y2", "24개월")]
+TAG_SHORT = {"NEWLOW": "신저가", "LOW": "저점권", "REBOUND": "반등"}
+
+
+def in_quiet_hour(hour, qf, qt):
+    return (hour >= qf or hour < qt) if qf > qt else (qf <= hour < qt)
+
+
+def digest_hours(tc):
+    """보낼 시각(시): 시작 시각부터 N시간마다, 조용한 시간대는 건너뛰어요 (기본 7시·13시·19시)"""
+    out, h = [], tc["digest_start"]
+    while h < tc["digest_start"] + 24:
+        if not in_quiet_hour(h % 24, tc["quiet_from"], tc["quiet_to"]):
+            out.append(h % 24)
+        h += tc["digest_every_hours"]
+    return sorted(set(out))
+
+
+def due_digest(tc, now, st, window_min=120):
+    """지금 보낼 차례인 시각 표시(예: '2026-10-30 13')를 돌려줘요. 없으면 None"""
+    if not tc.get("digest", True):
+        return None
+    k = now.astimezone(KST)
+    for hh in digest_hours(tc):
+        slot = k.replace(hour=hh, minute=0, second=0, microsecond=0)
+        if slot <= k <= slot + timedelta(minutes=window_min):
+            sid = slot.strftime("%Y-%m-%d %H")
+            return None if st.get("digest_last") == sid else sid
+    return None
+
+
+def msg_digest(coins, n, now, url):
+    k = now.astimezone(KST)
+    lines = [f"Coin Time · 하락폭 TOP {n} (빗썸 · {k.month}/{k.day} {k.hour:02d}:{k.minute:02d})"]
+    for key, label in PERIOD_NAMES:
+        rows = sorted([c for c in coins if c["ch"].get(key) is not None], key=lambda c: c["ch"][key])[:n]
+        lines += ["", f"[{label}]"]
+        if not rows:
+            lines.append("데이터가 아직 없어요")
+        for i, c in enumerate(rows, 1):
+            tag = f" · {TAG_SHORT[c['tag']]}" if c.get("tag") in TAG_SHORT else ""
+            lines.append(f"{i}. {c['n']} {fmt_pct(c['ch'][key])} · {fmt_price(c['p'])}원{tag}")
+    if url:
+        lines += ["", f"📊 {url}"]
+    return "\n".join(lines)
+
+
 # ───────────────────────── 한 번 실행 ─────────────────────────
 def run_once(cfg, demo=False):
     cs.BUY_TH, cs.SELL_TH, cs.FEE = cfg["buy_threshold"], cfg["sell_threshold"], cfg["fee"]
@@ -412,8 +463,11 @@ def run_once(cfg, demo=False):
             st["last"]["uerr"] = iso(now)
     cmap = {c["m"]: c for c in coins}
     watch_set = {x["market"] for x in markets}
+    pins = cfg.get("pin") or []
     for c in coins:
         c["w"] = 1 if c["m"] in watch_set else 0
+        if c["m"] in pins:
+            c["pin"] = 1   # 관심 목록에서 맨 위에 보여 줄 코인
     ltags = st.setdefault("ltags", {})
     low_first = not st.get("uinit")  # 처음 한 번은 현재 상태만 기록하고 알림은 건너뛰어요
     st["uinit"] = True
@@ -452,18 +506,27 @@ def run_once(cfg, demo=False):
     st["history"] = st["history"][-30:]
     save_state(st)
 
-    # 텔레그램 전송 (많으면 묶어서)
+    # 텔레그램: 기본은 하루 3번(7·13·19시) 하락 TOP 묶음만 보내요. 밤 10시~아침 7시에는 보내지 않아요.
     url = dashboard_url(cfg)
     tail = f"\n\n📊 {url}" if url else ""
-    if alerts:
+    tc = cfg["telegram"]
+    quiet = in_quiet_hour(now.astimezone(KST).hour, tc["quiet_from"], tc["quiet_to"])
+    manual = os.environ.get("EVENT_NAME") == "workflow_dispatch"
+    if alerts and tc.get("instant_alerts") and not quiet:
         if len(alerts) <= 3:
             for t in alerts:
                 tg_send(t + tail)
         else:
             tg_send("\n\n".join(alerts[:8]) + tail)
-    if os.environ.get("EVENT_NAME") == "workflow_dispatch":
+    sid = due_digest(tc, now, st)
+    if (sid or manual) and coins and not stale:
+        sent = tg_send(msg_digest(coins, tc["digest_size"], now, url))
+        if sid and (sent or not os.environ.get("TELEGRAM_TOKEN")):
+            st["digest_last"] = sid   # 전송에 실패하면 표시하지 않아서 다음 실행에서 다시 시도해요
+    if manual:
         lines = [f"{x['name']} {fmt_price(x['price'])}원 {x['signal']}" for x in markets if x["status"] == "ok"]
         tg_send("✅ Coin Time 연결 확인\n" + ("\n".join(lines) or "시세를 가져오지 못했어요") + tail)
+    save_state(st)
 
     for c in coins + (upbit["coins"] if upbit else []):  # 화면 데이터가 작아지도록 빈 값은 빼요
         if not c.get("pl"):
@@ -477,11 +540,14 @@ def run_once(cfg, demo=False):
         "coins": coins, "stale": stale, "exchanges": ["bithumb", "upbit"] if upbit else ["bithumb"],
         "alerts": list(reversed(st["history"]))[:20],
     }
-    publish(data, upbit)
+    charts = {"bithumb": universe.charts_for(st, "bithumb", coins)}
+    if upbit:
+        charts["upbit"] = universe.charts_for(st, "upbit", upbit["coins"])
+    publish(data, upbit, charts)
     return data
 
 
-def publish(data, upbit=None):
+def publish(data, upbit=None, charts=None):
     os.makedirs(SITE, exist_ok=True)
     if os.path.isdir(WEB):
         shutil.copytree(WEB, SITE, dirs_exist_ok=True)
@@ -495,6 +561,14 @@ def publish(data, upbit=None):
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(obj, f, ensure_ascii=False, separators=(",", ":"))
         os.replace(tmp, os.path.join(SITE, name))
+    for ex, per in (charts or {}).items():  # 코인별 차트 점들: c/거래소/기호.json (상세 화면을 열 때만 불러와요)
+        d = os.path.join(SITE, "c", ex)
+        os.makedirs(d, exist_ok=True)
+        for sym, payload in per.items():
+            if not sym.replace("-", "").replace("_", "").isalnum():
+                continue
+            with open(os.path.join(d, sym + ".json"), "w", encoding="utf-8") as f:
+                json.dump(payload, f, separators=(",", ":"))
 
 
 def print_table(data):

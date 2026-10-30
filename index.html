@@ -183,6 +183,14 @@ h2{font-size:15px; font-weight:600; margin:26px 2px 8px}
 .rb{display:flex; justify-content:space-between; gap:8px; font-size:13px}
 .rb .lo{font-weight:600}
 .vi-t{color:var(--vi)} .am-t{color:var(--am)}
+.chead{display:flex; justify-content:space-between; align-items:baseline; margin:14px 2px 6px; font-size:13px}
+.chead b{font-size:22px; font-weight:600; letter-spacing:-0.01em}
+.chart{display:block; width:100%; height:auto; touch-action:pan-y; cursor:crosshair; color:var(--fg)}
+.cinfo{display:flex; flex-direction:column; gap:3px; margin:8px 2px 2px; font-size:12.5px; color:var(--mfg)}
+.cinfo .r2{display:flex; justify-content:space-between; gap:8px}
+.cinfo .v1{color:var(--fg); font-weight:500}
+.cbox .sk{height:170px}
+.cbox .empty{padding:44px 8px}
 .grid7{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px}
 .cell{border:1px solid var(--bd); border-radius:10px; padding:8px 2px 7px; text-align:center; min-width:0; background:var(--bg)}
 .cell.sel{border-color:var(--fg)}
@@ -319,7 +327,9 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
   }
   function sortedCoins(){
     var k = S.sort;
+    var pinFirst = S.filter === "WATCH";
     return cur().coins.filter(matches).sort(function(a, b){
+      if(pinFirst){ var pa = a.pin ? 1 : 0, pb = b.pin ? 1 : 0; if(pa !== pb) return pb - pa }
       var va = a.ch[k], vb = b.ch[k];
       if(va == null && vb == null) return 0;
       if(va == null) return 1;
@@ -435,6 +445,92 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     else st.hidden = true;
   }
 
+  var CH = {}, CP = null;
+  var XL = {d:"24시간 전", w:"7일 전", m:"30일 전", q:"3개월 전", h:"6개월 전", y:"12개월 전", y2:"24개월 전"};
+  function loadChart(c, cb){
+    var k = S.ex + "/" + c.s, hit = CH[k];
+    if(hit && Date.now() - hit.t < 600000){ cb(hit.d); return }
+    fetch("c/" + k + ".json?t=" + Math.floor(Date.now() / 600000), {cache:"no-store"})
+      .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json() })
+      .then(function(d){ CH[k] = {t:Date.now(), d:d}; cb(d) })
+      .catch(function(){ cb(null) });
+  }
+  function drawLine(box, info, vals, key){
+    var W = 360, H = 170, L = 3, R = 3, T = 10, B = 10, n = vals.length, ns = "http://www.w3.org/2000/svg";
+    var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals), pad = (mx - mn) || Math.abs(mx) * 0.02 || 1;
+    var lo = mn, hi = mx;
+    if(mx === mn){ mx += pad; mn -= pad }
+    function X(i){ return L + (W - L - R) * i / (n - 1) }
+    function Y(v){ return T + (H - T - B) * (1 - (v - mn) / (mx - mn)) }
+    var up = vals[n - 1] >= vals[0], col = up ? "var(--up)" : "var(--down)";
+    function node(tag, attrs){ var e = document.createElementNS(ns, tag); for(var k in attrs) e.setAttribute(k, attrs[k]); return e }
+    var svg = node("svg", {viewBox:"0 0 " + W + " " + H, "class":"chart", role:"img"});
+    svg.setAttribute("aria-label", XL[key] + "부터 지금까지 가격 흐름, " + fmtPct(vals[n - 1] / vals[0] - 1));
+    var d = "", i; for(i = 0; i < n; i++) d += (i ? "L" : "M") + X(i).toFixed(1) + "," + Y(vals[i]).toFixed(1);
+    svg.appendChild(node("path", {d:d + "L" + X(n - 1).toFixed(1) + "," + (H - B) + "L" + X(0).toFixed(1) + "," + (H - B) + "Z", fill:col, "fill-opacity":"0.12"}));
+    svg.appendChild(node("line", {x1:L, x2:W - R, y1:Y(vals[0]).toFixed(1), y2:Y(vals[0]).toFixed(1), stroke:"var(--bd)", "stroke-width":"1", "stroke-dasharray":"4 4"}));
+    svg.appendChild(node("path", {d:d, fill:"none", stroke:col, "stroke-width":"2", "stroke-linejoin":"round", "stroke-linecap":"round"}));
+    var vl = node("line", {x1:0, x2:0, y1:T, y2:H - B, stroke:"var(--mfg)", "stroke-width":"1", visibility:"hidden"});
+    var hd = node("circle", {r:"4", fill:col, stroke:"var(--card)", "stroke-width":"2", visibility:"hidden"});
+    svg.appendChild(vl); svg.appendChild(hd);
+    svg.appendChild(node("circle", {cx:X(n - 1).toFixed(1), cy:Y(vals[n - 1]).toFixed(1), r:"4", fill:col, stroke:"var(--card)", "stroke-width":"2"}));
+    box.appendChild(svg);
+
+    info.textContent = "";
+    var r1 = el("div", "r2"), a1 = el("span", "v1 num"), b1 = el("span", "num");
+    r1.appendChild(a1); r1.appendChild(b1);
+    var r2 = el("div", "r2"); r2.appendChild(el("span", null, XL[key])); r2.appendChild(el("span", null, "지금"));
+    info.appendChild(r1); info.appendChild(r2);
+    function rest(){
+      a1.textContent = "최저 " + fmtPrice(lo) + "원 · 최고 " + fmtPrice(hi) + "원";
+      b1.textContent = "점선 = 시작 가격"; vl.setAttribute("visibility", "hidden"); hd.setAttribute("visibility", "hidden");
+    }
+    function show(i){
+      a1.textContent = fmtPrice(vals[i]) + "원"; b1.textContent = "시작 대비 " + fmtPct(vals[i] / vals[0] - 1);
+      vl.setAttribute("x1", X(i).toFixed(1)); vl.setAttribute("x2", X(i).toFixed(1));
+      hd.setAttribute("cx", X(i).toFixed(1)); hd.setAttribute("cy", Y(vals[i]).toFixed(1));
+      vl.setAttribute("visibility", "visible"); hd.setAttribute("visibility", "visible");
+    }
+    function move(ev){
+      var rc = svg.getBoundingClientRect(); if(!rc.width) return;
+      var x = ((ev.touches && ev.touches[0] ? ev.touches[0].clientX : ev.clientX) - rc.left) / rc.width;
+      show(Math.round(Math.max(0, Math.min(1, x)) * (n - 1)));
+    }
+    svg.addEventListener("pointermove", move); svg.addEventListener("pointerdown", move);
+    svg.addEventListener("pointerleave", rest); svg.addEventListener("pointerup", rest); svg.addEventListener("pointercancel", rest);
+    rest();
+  }
+  function chartSection(c){
+    var sec = section("가격 차트", "기간을 고르면 바뀌어요"), card = el("div", "card");
+    var tabs = el("div", "seg"), head = el("div", "chead"), box = el("div", "cbox"), info = el("div", "cinfo");
+    tabs.setAttribute("role", "group"); tabs.setAttribute("aria-label", "차트 기간");
+    [tabs, head, box, info].forEach(function(n){ card.appendChild(n) });
+    sec.appendChild(card);
+    if(!CP) CP = S.sort;
+    var data;   // undefined = 불러오는 중, null = 없음
+    function tabsRender(){
+      tabs.textContent = "";
+      SORTS.forEach(function(p){
+        var b = el("button", null, p[1]); b.setAttribute("aria-pressed", CP === p[0] ? "true" : "false");
+        b.onclick = function(){ CP = p[0]; tabsRender(); draw() };
+        tabs.appendChild(b);
+      });
+    }
+    function draw(){
+      head.textContent = ""; box.textContent = ""; info.textContent = "";
+      var ch = c.ch[CP];
+      head.appendChild(el("span", "mu", sortLabel(CP) + " 변동"));
+      head.appendChild(el("b", "num " + tone(ch), ch == null ? "-" : fmtPct(ch)));
+      if(data === undefined){ box.appendChild(el("div", "sk")); return }
+      var vals = data && data[CP];
+      if(!vals || vals.length < 2){ box.appendChild(el("div", "empty", "이 기간의 차트 데이터가 아직 없어요. 상장한 지 얼마 안 됐거나 데이터를 모으는 중이에요.")); return }
+      drawLine(box, info, vals, CP);
+    }
+    tabsRender(); draw();
+    loadChart(c, function(d){ data = d; draw() });
+    return sec;
+  }
+
   function section(title, hint){
     var s = el("div", "sec"), h = el("div", "hd"); h.appendChild(el("b", null, title)); if(hint) h.appendChild(el("span", null, hint));
     s.appendChild(h); return s;
@@ -491,6 +587,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
 
     var s2 = section("기간별 변동률", "지금 가격 ÷ 그때 종가"), card2 = el("div", "card");
     card2.appendChild(grid7(c, true)); s2.appendChild(card2); v.appendChild(s2);
+    v.appendChild(chartSection(c));
 
     var s3 = section("신호와 알림"), card3 = el("div", "card");
     if(w && w.status === "ok"){
