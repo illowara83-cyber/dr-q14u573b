@@ -157,6 +157,15 @@ h2{font-size:15px; font-weight:600; margin:26px 2px 8px}
 .dh h1 small{font-size:13px; font-weight:400; color:var(--mfg); margin-left:6px}
 .dh .big{font-size:25px; font-weight:600; text-align:right}
 .dh .big small{font-size:13px; font-weight:400; color:var(--mfg)}
+.nwc{display:block; text-decoration:none; color:inherit; background:var(--card); border:1px solid var(--bd); border-radius:14px; padding:14px}
+a.nwc:hover{background:var(--muted)}
+.nt{font-size:15.5px; font-weight:600; line-height:1.5; margin:0 0 8px}
+.nmeta{display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px; color:var(--mfg)}
+.ntag{font-size:11.5px; font-weight:500; padding:1px 8px; border-radius:999px; border:1px solid var(--bd); color:var(--fg)}
+.ntag.w{background:var(--vi-bg); color:var(--vi); border-color:var(--vi-bd)}
+.nnew{color:var(--gr); font-weight:600}
+.linkbtn{display:flex; align-items:center; justify-content:center; gap:8px; height:46px; border:1px solid var(--bd); border-radius:var(--radius); background:var(--card); color:var(--fg); text-decoration:none; font-weight:500; font-size:14px; margin-bottom:16px}
+.linkbtn:hover{background:var(--muted)}
 .sm{border:1px solid var(--bd); border-radius:14px; padding:14px; margin-bottom:16px; display:flex; flex-direction:column; gap:9px}
 .sm.vi{background:var(--vi-bg); border-color:var(--vi-bd)}
 .sm.am{background:var(--am-bg); border-color:var(--am-bd)}
@@ -233,6 +242,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
         <div class="sub"><span class="dot" id="dot"></span><span id="sub">불러오는 중</span></div>
       </div>
       <div style="display:flex;gap:8px">
+      <button class="ibtn" id="newsBtn" aria-label="코인 뉴스" title="코인 뉴스"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8V6Z"/></svg></button>
       <button class="ibtn tx" id="theme" aria-label="화면 색 바꾸기">어둡게</button>
       <button class="ibtn" id="rf" aria-label="새로고침"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></button>
       </div>
@@ -261,6 +271,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
   </div>
 
   <div id="detailView" hidden></div>
+  <div id="newsView" hidden></div>
 </div>
 
 <script>
@@ -544,6 +555,77 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     return sec;
   }
 
+  var NEWS = null, NF = "ALL", newsShown = 30, newsAsked = 0;
+  function loadNews(force, cb){
+    if(NEWS && !force && Date.now() - newsAsked < 120000){ cb && cb(); return }
+    newsAsked = Date.now();
+    fetch("news.json?t=" + Math.floor(Date.now() / 120000), {cache:"no-store"})
+      .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json() })
+      .then(function(d){ NEWS = d; cb && cb() })
+      .catch(function(){ if(!NEWS) NEWS = false; cb && cb() });
+  }
+  function showNews(keepScroll){
+    var y = window.scrollY;
+    $("listView").hidden = true; $("detailView").hidden = true;
+    var v = $("newsView"); v.hidden = false; v.textContent = "";
+    var back = el("button", "back"); back.innerHTML = '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>';
+    back.appendChild(document.createTextNode("시세로")); back.onclick = function(){ location.hash = "" };
+    v.appendChild(back);
+    var dh = el("div", "dh"), l = el("div"), h1 = el("h1", null, "코인 뉴스");
+    l.appendChild(h1);
+    var sub = el("div", "mu", NEWS === null ? "불러오는 중" : NEWS === false ? "아직 뉴스가 없어요" : NEWS.items.length + "건 · " + ago(NEWS.updated) + " 업데이트"); sub.style.fontSize = "12px"; l.appendChild(sub);
+    dh.appendChild(l); v.appendChild(dh);
+    if(NEWS === null){
+      for(var i = 0; i < 4; i++) v.appendChild(el("div", "sk"));
+      loadNews(false, function(){ if(location.hash === "#_news") showNews(true) });
+      return;
+    }
+    if(NEWS === false || !NEWS.items.length){
+      v.appendChild(el("div", "empty", "뉴스는 다음 자동 실행 뒤에 나타나요(보통 30분 안). 계속 비어 있으면 알려 주세요."));
+      return;
+    }
+    if(NEWS.stale) v.appendChild(el("div", "alert", "뉴스를 새로 받지 못해서 이전 기사를 보여 주고 있어요."));
+    var lead = el("p", "lead", "구글 뉴스에서 모은 기사 제목이에요. 제목을 누르면 원문 기사로 이동해요. 기사 내용과 저작권은 각 매체에 있어요."); v.appendChild(lead);
+
+    var watch = NEWS.watch || [], count = {ALL:NEWS.items.length, WATCH:0};
+    NEWS.items.forEach(function(it){
+      it.tp.forEach(function(t){ count[t] = (count[t] || 0) + 1 });
+      if(it.tp.some(function(t){ return watch.indexOf(t) >= 0 })) count.WATCH++;
+    });
+    var chips = el("div", "chips"); chips.setAttribute("role", "group"); chips.setAttribute("aria-label", "뉴스 주제");
+    var tabs = [["ALL","전체"], ["WATCH","관심 코인"]].concat(NEWS.topics.map(function(t){ return [t, t] })).filter(function(t){ return count[t[0]] });
+    tabs.forEach(function(t){
+      var b = el("button", "chip", t[1]); b.appendChild(el("b", "num", String(count[t[0]])));
+      b.setAttribute("aria-pressed", NF === t[0] ? "true" : "false");
+      b.onclick = function(){ NF = t[0]; newsShown = 30; showNews(true) };
+      chips.appendChild(b);
+    });
+    v.appendChild(chips);
+
+    var list = NEWS.items.filter(function(it){
+      return NF === "ALL" || (NF === "WATCH" ? it.tp.some(function(t){ return watch.indexOf(t) >= 0 }) : it.tp.indexOf(NF) >= 0);
+    });
+    var box = el("div", "list");
+    if(!list.length) box.appendChild(el("div", "empty", "이 주제의 기사가 아직 없어요."));
+    list.slice(0, newsShown).forEach(function(it){
+      var ok = /^https?:\/\//.test(it.u), a = el(ok ? "a" : "div", "nwc");
+      if(ok){ a.href = it.u; a.target = "_blank"; a.rel = "noopener noreferrer" }
+      a.appendChild(el("p", "nt", it.t));
+      var m = el("div", "nmeta"), mins = (Date.now() - new Date(it.d).getTime()) / 60000;
+      if(mins < 60) m.appendChild(el("span", "nnew", "새 기사"));
+      if(it.s) m.appendChild(el("span", null, it.s));
+      m.appendChild(el("span", null, "· " + ago(it.d)));
+      it.tp.slice(0, 2).forEach(function(t){ m.appendChild(el("span", "ntag" + (watch.indexOf(t) >= 0 ? " w" : ""), t)) });
+      a.appendChild(m); box.appendChild(a);
+    });
+    v.appendChild(box);
+    if(list.length > newsShown){
+      var more = el("button", "more", "더 보기 (" + Math.min(30, list.length - newsShown) + "개 더, 남은 " + (list.length - newsShown) + "개)");
+      more.onclick = function(){ newsShown += 30; showNews(true) }; v.appendChild(more);
+    }
+    window.scrollTo(0, keepScroll ? y : 0);
+  }
+
   function section(title, hint){
     var s = el("div", "sec"), h = el("div", "hd"); h.appendChild(el("b", null, title)); if(hint) h.appendChild(el("span", null, hint));
     s.appendChild(h); return s;
@@ -552,7 +634,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
 
   function showDetail(c, keepScroll){
     var y = window.scrollY, age = c.age || 0;
-    $("listView").hidden = true;
+    $("listView").hidden = true; $("newsView").hidden = true;
     var v = $("detailView"); v.hidden = false; v.textContent = "";
     var w = S.ex === "upbit" ? null : WATCH[c.m];
 
@@ -697,6 +779,11 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     hn(3, [el("b", null, "가장 싼 쪽"), ": 막대에서 점이 왼쪽 15% 안(보라색 칸)에 있다는 뜻이에요. 상장 이후 기준은 가장 쌌던 가격보다 30% 이내예요. 싸다는 표시일 뿐, 더 내려가지 않는다는 보장은 아니에요."]);
     sh.appendChild(how); v.appendChild(sh);
 
+    var nl = el("a", "linkbtn"); nl.target = "_blank"; nl.rel = "noopener noreferrer";
+    nl.href = "https://news.google.com/search?q=" + encodeURIComponent(c.n + " 코인") + "&hl=ko&gl=KR&ceid=KR%3Ako";
+    nl.innerHTML = '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
+    nl.appendChild(document.createTextNode(c.n + " 뉴스 보기")); v.appendChild(nl);
+
     v.appendChild(el("p", "foot", "저점은 지나고 나서야 확인할 수 있어요. 저점권은 가격이 그 기간 중 싼 쪽에 있다는 뜻일 뿐, 더 내려가지 않는다는 보장이 아니에요. 참고용이에요."));
     window.scrollTo(0, keepScroll ? y : 0);
   }
@@ -704,6 +791,10 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
   function route(){
     if(!DATA) return;
     var h = decodeURIComponent(location.hash.replace(/^#/, "")), c = null;
+    if(h === "_news"){
+      if(!$("listView").hidden) listY = window.scrollY;
+      var sameN = curDetail === "_news"; curDetail = "_news"; showNews(sameN); return;
+    }
     if(h.indexOf("upbit-") === 0){
       h = h.slice(6);
       if(S.ex !== "upbit"){ S.ex = "upbit"; S.shown = 30; if(S.filter !== "ALL" && !filters().some(function(f){ return f[0] === S.filter })) S.filter = "ALL" }
@@ -715,7 +806,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
       var same = curDetail === c.s; curDetail = c.s; showDetail(c, same);
     } else {
       var was = curDetail !== null; curDetail = null;
-      $("detailView").hidden = true; $("listView").hidden = false; renderList(); tick();
+      $("detailView").hidden = true; $("newsView").hidden = true; $("listView").hidden = false; renderList(); tick();
       if(was) window.scrollTo(0, listY);
     }
   }
@@ -729,6 +820,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
         (d.markets || []).forEach(function(m){ WATCH[m.market] = m });
         if(UP || S.ex === "upbit") loadUp(true);
         route();
+        if(curDetail === "_news") loadNews(false, function(){ showNews(true) });
       })
       .catch(function(){
         if(!DATA){
@@ -784,7 +876,8 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     $("q").addEventListener("input", function(){ S.q = this.value.trim(); S.shown = 30; if(DATA) renderList() });
     $("more").onclick = function(){ S.shown += 30; renderList() };
     $("flip").onclick = function(){ S.dir = -S.dir; S.shown = 30; if(cur()) renderList() };
-    $("rf").onclick = load;
+    $("rf").onclick = function(){ load(); if(curDetail === "_news") loadNews(true, function(){ showNews(true) }) };
+    $("newsBtn").onclick = function(){ location.hash = "_news" };
     window.addEventListener("hashchange", route);
     document.addEventListener("visibilitychange", function(){ if(!document.hidden) load() });
     setInterval(load, 120000); setInterval(tick, 30000);

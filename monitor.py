@@ -25,6 +25,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 
 import coin_signal as cs
+import news
 import universe
 
 KST = timezone(timedelta(hours=9))
@@ -55,6 +56,11 @@ DEFAULTS = {
     "min_trade_value_24h": 0,
     "upbit": True,
     "pin": ["KRW-PCI"],
+    "news": {"enabled": True, "every_minutes": 10, "max_items": 120, "max_age_hours": 72,
+             "topics": [["시장", "코인 시세"], ["비트코인", "비트코인"], ["이더리움", "이더리움"], ["리플", "리플 XRP"],
+                        ["솔라나", "솔라나"], ["도지코인", "도지코인"], ["페이코인", "페이코인"], ["알트코인", "알트코인"],
+                        ["빗썸", "빗썸"], ["업비트", "업비트"], ["상장·상폐", "코인 상장 폐지"],
+                        ["규제·정책", "가상자산 규제"], ["스테이블코인", "스테이블코인"]]},
     "telegram": {"digest": True, "digest_size": 20, "digest_start": 7, "digest_every_hours": 6,
                  "quiet_from": 22, "quiet_to": 7, "instant_alerts": False},
     "alerts": {"signal_change": True, "spike": True, "spike_pct": 5, "spike_minutes": 60,
@@ -461,9 +467,17 @@ def run_once(cfg, demo=False):
             else:
                 st["hit"].pop(mk, None)
 
+    url = dashboard_url(cfg)
+    tail = f"\n\n📊 {url}" if url else ""
+    manual = os.environ.get("EVENT_NAME") == "workflow_dispatch"
+    if manual:   # 직접 실행했다면 오래 걸리는 전체 코인 작업 전에 먼저 알려요
+        lines = [f"{x['name']} {fmt_price(x['price'])}원" for x in markets if x["status"] == "ok"]
+        tg_send("✅ Coin Time 실행을 시작했어요 (전체 코인 처리 중이라 몇 분 걸려요)\n" + ("\n".join(lines) or "시세를 가져오지 못했어요") + tail)
+    print("관심 종목 처리 끝, 전체 코인 처리 시작", flush=True)
+
     # 빗썸 전체 코인 + 저점 판정 (관심 종목은 저점 알림도 보내요)
     try:
-        coins, stale = universe.build(cfg, st, demo, "bithumb", 80)
+        coins, stale = universe.build(cfg, st, demo, "bithumb", 60)
     except Exception as e:  # 전체 코인 처리에서 오류가 나도 관심 종목 알림은 계속 보내요
         import traceback
         traceback.print_exc()
@@ -493,10 +507,11 @@ def run_once(cfg, demo=False):
                 st["last"][f"low:{m['market']}"] = iso(now)
         ltags[m["market"]] = cur
 
+    print("빗썸 전체 코인 처리 끝", flush=True)
     upbit = None
     if cfg.get("upbit", True):
         try:
-            ucoins, ustale = universe.build(cfg, st, demo, "upbit", 100)
+            ucoins, ustale = universe.build(cfg, st, demo, "upbit", 60)
             upbit = {"updated": iso(now), "coins": ucoins, "stale": ustale}
         except Exception as e:
             import traceback
@@ -505,6 +520,16 @@ def run_once(cfg, demo=False):
             ulast = st.get("u", {}).get("upbit", {}).get("last", [])
             if ulast:
                 upbit = {"updated": iso(now), "coins": ulast, "stale": True}
+
+    newsdata = None
+    try:
+        wnames = [display_name(x["market"]) for x in markets]
+        newsdata = news.update(cfg, st, now, manual, wnames, demo)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print("뉴스 처리 오류:", describe_error(e))
+    print("뉴스 처리 끝", flush=True)
 
     # 모든 종목 실패 → 한 번 알려주기(6시간에 한 번)
     if markets and all(x["status"] == "error" for x in markets):
@@ -517,11 +542,8 @@ def run_once(cfg, demo=False):
     save_state(st)
 
     # 텔레그램: 기본은 하루 3번(7·13·19시) 하락 TOP 묶음만 보내요. 밤 10시~아침 7시에는 보내지 않아요.
-    url = dashboard_url(cfg)
-    tail = f"\n\n📊 {url}" if url else ""
     tc = cfg["telegram"]
     quiet = in_quiet_hour(now.astimezone(KST).hour, tc["quiet_from"], tc["quiet_to"])
-    manual = os.environ.get("EVENT_NAME") == "workflow_dispatch"
     if alerts and tc.get("instant_alerts") and not quiet:
         if len(alerts) <= 3:
             for t in alerts:
@@ -538,8 +560,7 @@ def run_once(cfg, demo=False):
         if sid and (sent or not os.environ.get("TELEGRAM_TOKEN")):
             st["digest_last"] = sid   # 전송에 실패하면 표시하지 않아서 다음 실행에서 다시 시도해요
     if manual:
-        lines = [f"{x['name']} {fmt_price(x['price'])}원 {x['signal']}" for x in markets if x["status"] == "ok"]
-        tg_send("✅ Coin Time 연결 확인\n" + ("\n".join(lines) or "시세를 가져오지 못했어요") + tail)
+        tg_send("✅ Coin Time 처리를 마쳤어요. 화면을 새로고침해 보세요." + tail)
     save_state(st)
 
     for c in coins + (upbit["coins"] if upbit else []):  # 화면 데이터가 작아지도록 빈 값은 빼요
@@ -557,18 +578,18 @@ def run_once(cfg, demo=False):
     charts = {"bithumb": universe.charts_for(st, "bithumb", coins)}
     if upbit:
         charts["upbit"] = universe.charts_for(st, "upbit", upbit["coins"])
-    publish(data, upbit, charts)
+    publish(data, upbit, charts, newsdata)
     return data
 
 
-def publish(data, upbit=None, charts=None):
+def publish(data, upbit=None, charts=None, newsdata=None):
     os.makedirs(SITE, exist_ok=True)
     if os.path.isdir(WEB):
         shutil.copytree(WEB, SITE, dirs_exist_ok=True)
     for f in ROOT_WEB_FILES:  # 저장소 맨 바깥에 올린 화면 파일도 사용 (새로 올린 것이 우선)
         if os.path.isfile(f):
             shutil.copy(f, os.path.join(SITE, f))
-    for name, obj in (("data.json", data), ("upbit.json", upbit)):
+    for name, obj in (("data.json", data), ("upbit.json", upbit), ("news.json", newsdata)):
         if obj is None:
             continue
         tmp = os.path.join(SITE, name + ".tmp")
