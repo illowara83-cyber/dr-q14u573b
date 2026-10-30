@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 
-UA = {"User-Agent": "Mozilla/5.0 (compatible; CoinTime/1.0)"}
+UA = {"User-Agent": "Mozilla/5.0 (compatible; DipRadar/1.0)"}
 PER_TOPIC = 25   # 주제마다 최대 이만큼만 가져와요
 
 

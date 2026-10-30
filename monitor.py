@@ -388,7 +388,7 @@ def due_digest(tc, now, st, window_min=120):
 def msg_digest(coins, n, now, url, limit=3800):
     """기간별 하락 TOP n. 텔레그램은 한 메시지가 4096자까지라서 길면 여러 개로 나눠요."""
     k = now.astimezone(KST)
-    title = f"Coin Time · 하락폭 TOP {n} (빗썸 · {k.month}/{k.day} {k.hour:02d}:{k.minute:02d})"
+    title = f"Dip Radar · 하락폭 TOP {n} (빗썸 · {k.month}/{k.day} {k.hour:02d}:{k.minute:02d})"
     sections = []
     for key, label in PERIOD_NAMES:
         rows = sorted([c for c in coins if c["ch"].get(key) is not None], key=lambda c: c["ch"][key])[:n]
@@ -472,7 +472,7 @@ def run_once(cfg, demo=False):
     manual = os.environ.get("EVENT_NAME") == "workflow_dispatch"
     if manual:   # 직접 실행했다면 오래 걸리는 전체 코인 작업 전에 먼저 알려요
         lines = [f"{x['name']} {fmt_price(x['price'])}원" for x in markets if x["status"] == "ok"]
-        tg_send("✅ Coin Time 실행을 시작했어요 (전체 코인 처리 중이라 몇 분 걸려요)\n" + ("\n".join(lines) or "시세를 가져오지 못했어요") + tail)
+        tg_send("✅ Dip Radar 실행을 시작했어요 (전체 코인 처리 중이라 몇 분 걸려요)\n" + ("\n".join(lines) or "시세를 가져오지 못했어요") + tail)
     print("관심 종목 처리 끝, 전체 코인 처리 시작", flush=True)
 
     # 빗썸 전체 코인 + 저점 판정 (관심 종목은 저점 알림도 보내요)
@@ -560,7 +560,7 @@ def run_once(cfg, demo=False):
         if sid and (sent or not os.environ.get("TELEGRAM_TOKEN")):
             st["digest_last"] = sid   # 전송에 실패하면 표시하지 않아서 다음 실행에서 다시 시도해요
     if manual:
-        tg_send("✅ Coin Time 처리를 마쳤어요. 화면을 새로고침해 보세요." + tail)
+        tg_send("✅ Dip Radar 처리를 마쳤어요. 화면을 새로고침해 보세요." + tail)
     save_state(st)
 
     for c in coins + (upbit["coins"] if upbit else []):  # 화면 데이터가 작아지도록 빈 값은 빼요
@@ -639,7 +639,7 @@ def main():
         except Exception as e:
             import traceback
             traceback.print_exc()
-            tg_send("⚠️ Coin Time 프로그램 오류\n" + describe_error(e) + "\n이 메시지를 그대로 알려 주시면 고칠 수 있어요.")
+            tg_send("⚠️ Dip Radar 프로그램 오류\n" + describe_error(e) + "\n이 메시지를 그대로 알려 주시면 고칠 수 있어요.")
             if not args.loop:
                 sys.exit(1)
             time.sleep(args.loop)

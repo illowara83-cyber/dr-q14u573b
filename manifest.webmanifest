@@ -1,6 +1,6 @@
 {
-  "name": "Coin Time",
-  "short_name": "Coin Time",
+  "name": "Dip Radar",
+  "short_name": "Dip Radar",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
