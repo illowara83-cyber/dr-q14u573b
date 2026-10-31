@@ -170,20 +170,16 @@ a.nwc:hover{background:var(--muted)}
 .nnew{color:var(--gr); font-weight:600}
 .linkbtn{display:flex; align-items:center; justify-content:center; gap:8px; height:46px; border:1px solid var(--bd); border-radius:var(--radius); background:var(--card); color:var(--fg); text-decoration:none; font-weight:500; font-size:14px; margin-bottom:16px}
 .linkbtn:hover{background:var(--muted)}
-.snsbtn{display:flex; align-items:center; justify-content:center; gap:8px; width:100%; min-height:46px; border:1px solid var(--bd); border-radius:var(--radius); background:var(--card); color:var(--fg); font-weight:500; font-size:14px; margin-bottom:10px}
-.snsbtn:hover{background:var(--muted)}
-.snsbtn[aria-expanded="true"]{border-color:var(--fg)}
-.snsbox{background:var(--card); border:1px solid var(--bd); border-radius:14px; padding:2px 14px; margin-bottom:8px}
-.snsrow{display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid var(--bd); min-height:62px; text-decoration:none; color:inherit}
-.snsrow:last-of-type{border-bottom:0}
-.snsrow:hover{opacity:.85}
-.snsrow .sn{flex:1; min-width:0}
-.snsrow .sn b{font-weight:600; font-size:15px}
-.snsrow .sn div{font-size:12.5px; color:var(--mfg); margin-top:1px}
-.snsrow svg.i{width:18px; height:18px; color:var(--mfg); flex:none}
+.rf{background:var(--card); border:1px solid var(--bd); border-radius:14px; padding:4px 14px}
+.rf .ln{padding:11px 0; border-bottom:1px solid var(--bd)}
+.rf .ln:last-child{border-bottom:0}
+.rf small{display:block; font-size:12px; color:var(--mfg); margin-top:1px; line-height:1.5}
+.rfn{padding:8px 0 2px; font-size:13.5px; line-height:1.5}
+.rfn a{color:inherit; text-decoration:none}
+.rfn a:hover{text-decoration:underline}
+.rfn div{font-size:12px; color:var(--mfg); margin-top:1px}
 .legal{font-size:11.5px; color:var(--mfg); line-height:1.75; margin:28px 2px 10px; padding-top:14px; border-top:1px solid var(--bd)}
 .legal a{color:var(--fg); text-decoration:underline}
-.snsnote{font-size:12px; color:var(--mfg); line-height:1.6; margin:2px 2px 16px}
 .cau{font-size:11.5px; font-weight:600; background:var(--am); color:var(--bg); border-radius:4px; padding:0 6px; margin-left:6px; vertical-align:2px}
 .wp{display:flex; flex-direction:column; gap:10px; margin-top:12px}
 .wp .wtop b{font-size:15px; font-weight:600}
@@ -685,6 +681,85 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     svg.addEventListener("pointerleave", rest); svg.addEventListener("pointerup", rest); svg.addEventListener("pointercancel", rest);
     rest();
   }
+  var RP = null;   // 가격 참고요인에서 고른 기간
+  var RP_KEYS = [["d","1일"], ["w","1주"], ["m","1개월"], ["q","3개월"], ["h","6개월"]];
+  function medianOf(arr){ var a = arr.slice().sort(function(x, y){ return x - y }), n = a.length; return n ? (n % 2 ? a[(n - 1) / 2] : (a[n / 2 - 1] + a[n / 2]) / 2) : null }
+  function pctTxt(v, cls){ return el("span", "num " + cls, fmtPct(v)) }
+  function reasonSection(c){
+    var sec = section("가격 참고요인", "데이터로 확인되는 것만");
+    var tabs = el("div", "seg"), card = el("div", "rf"), note = el("p", "note", "가격이 움직인 진짜 이유는 알 수 없어요. 이 카드는 시세와 수집한 기사 제목에서 확인되는 사실만 모아 보여 줘요. 기간 버튼을 바꾸면 비교 기간도 같이 바뀌어요.");
+    tabs.setAttribute("role", "group"); tabs.setAttribute("aria-label", "참고요인 기간"); tabs.style.marginBottom = "10px";
+    sec.appendChild(tabs); sec.appendChild(card); sec.appendChild(note);
+    if(!RP) RP = RP_KEYS.some(function(k){ return k[0] === S.sort }) ? S.sort : "m";
+    function ln(color, html, sub){
+      var d = el("div", "ln"), i = el("i"); i.style.background = color; d.appendChild(i);
+      var t = el("div"); html.forEach(function(x){ t.appendChild(typeof x === "string" ? document.createTextNode(x) : x) });
+      if(sub) t.appendChild(el("small", null, sub));
+      d.appendChild(t); card.appendChild(d); return d;
+    }
+    function render(){
+      tabs.textContent = "";
+      RP_KEYS.forEach(function(k){
+        var b = el("button", null, k[1]); b.setAttribute("aria-pressed", RP === k[0] ? "true" : "false");
+        b.onclick = function(){ RP = k[0]; render() }; tabs.appendChild(b);
+      });
+      card.textContent = "";
+      var k = RP, label = sortLabel(k), coins = cur().coins, mine = c.ch[k];
+      // ① 시장 대비
+      var vals = coins.map(function(x){ return x.ch[k] }).filter(function(v){ return v != null }), med = medianOf(vals);
+      if(mine == null || med == null){
+        ln("var(--mfg)", ["이 코인은 " + label + " 기록이 없어서 시장과 비교할 수 없어요."]);
+      } else {
+        var diff = mine - med, weak = diff <= -0.03, strong = diff >= 0.03;
+        var head = weak ? "시장보다 약해요." : strong ? "시장보다 강해요." : "시장과 비슷하게 움직였어요.";
+        var sub = weak || strong ? "시장 전체가 아니라 이 코인만의 요인일 가능성이 있어요."
+                : (Math.abs(med) >= 0.03 ? "시장 전체가 " + (med < 0 ? "내리는" : "오르는") + " 흐름이라 그 영향을 받았을 수 있어요." : "");
+        ln(weak ? "var(--down)" : strong ? "var(--up)" : "var(--mfg)",
+          [el("b", null, head), " " + label + " 동안 전체 코인의 중간값은 ", pctTxt(med, tone(med)), ", 이 코인은 ", pctTxt(mine, tone(mine)), "예요."], sub);
+      }
+      // ② 비트코인 대비
+      var btc = null; coins.forEach(function(x){ if(x.s === "BTC") btc = x });
+      if(btc && c.s !== "BTC" && btc.ch[k] != null) ln("var(--mfg)", ["같은 기간 비트코인은 ", pctTxt(btc.ch[k], tone(btc.ch[k])), "예요."]);
+      // ③ 거래 규모
+      var rank = 1 + coins.filter(function(x){ return x.v > c.v }).length;
+      ln("var(--mfg)", ["24시간 거래대금은 전체 " + coins.length + "개 중 ", el("b", null, rank + "위"), "예요."], rank > coins.length / 2 ? "순위가 낮으면 적은 거래로도 가격이 크게 움직일 수 있어요." : "");
+      // ④ 투자유의
+      if(c.cau){
+        var d4 = ln("var(--am)", [EXN[S.ex] + "이 ", el("b", null, "투자유의"), "로 지정했어요 ", el("span", "cau", "유의")], "지정 사유는 거래소 공지에서 확인해 주세요.");
+      }
+      // ⑤ 가격 위치
+      var age = c.age || 0, zl = [["w","1주"],["m","1개월"],["q","3개월"],["h","6개월"],["y","12개월"]].filter(function(p){ return inZone(p[0], c.p, c.lo[p[0]], age) }).map(function(p){ return p[1] });
+      if(inZone("a", c.p, c.lo.a, age)) zl.push("상장 이후");
+      if(c.tag === "NEWLOW") ln("var(--am)", [el("b", null, c.tg), "."]);
+      else if(c.tag === "REBOUND") ln("var(--gr)", [el("b", null, c.tg), "."]);
+      else if(zl.length) ln("var(--vi)", [el("b", null, zl.join("·")), " 동안 가장 싼 쪽에 있어요."]);
+      else if(c.tag === "HIGH") ln("var(--mfg)", ["3개월 범위의 위쪽(비싼 쪽)에 있어요."]);
+      // ⑥ 관련 기사
+      var hits = [];
+      if(NEWS && NEWS.items){
+        var nm = c.n, sy = c.s, re = sy.length >= 3 && /^[A-Za-z0-9]+$/.test(sy) ? new RegExp("(^|[^A-Za-z0-9])" + sy + "([^A-Za-z0-9]|$)", "i") : null;
+        NEWS.items.forEach(function(it){ if((nm.length >= 2 && it.t.indexOf(nm) >= 0) || (re && re.test(it.t))) hits.push(it) });
+      }
+      if(NEWS === null) ln("var(--mfg)", ["관련 기사를 찾는 중이에요…"]);
+      else if(NEWS === false || !NEWS.items) ln("var(--mfg)", ["수집한 기사를 아직 불러오지 못했어요."]);
+      else if(!hits.length) ln("var(--mfg)", ["최근 3일 수집된 기사 중 이 코인을 언급한 제목은 없어요."]);
+      else {
+        var d6 = el("div", "ln"), i6 = el("i"); i6.style.background = "var(--mfg)"; d6.appendChild(i6);
+        var box = el("div"); box.appendChild(el("b", null, "최근 3일 기사에 이 코인이 나왔어요 (" + hits.length + "건)"));
+        hits.slice(0, 3).forEach(function(it){
+          var row = el("div", "rfn"), ok = /^https?:\/\//.test(it.u), a = el(ok ? "a" : "span", null, it.t);
+          if(ok){ a.href = it.u; a.target = "_blank"; a.rel = "noopener noreferrer" }
+          row.appendChild(a); row.appendChild(el("div", null, (it.s ? it.s + " · " : "") + ago(it.d))); box.appendChild(row);
+        });
+        if(hits.length > 3) box.appendChild(el("small", null, "나머지 " + (hits.length - 3) + "건은 아래 뉴스 보기에서 찾아볼 수 있어요."));
+        d6.appendChild(box); card.appendChild(d6);
+      }
+    }
+    render();
+    if(NEWS === null) loadNews(false, render);
+    return sec;
+  }
+
   function chartSection(c, onPick){
     var sec = section("가격 차트", "기간을 고르면 바뀌어요"), card = el("div", "card");
     var tabs = el("div", "seg"), head = el("div", "chead"), box = el("div", "cbox"), info = el("div", "cinfo");
@@ -971,34 +1046,14 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     hn(3, [el("b", null, "가장 싼 쪽"), ": 막대에서 점이 왼쪽 15% 안(보라색 칸)에 있다는 뜻이에요. 상장 이후 기준은 가장 쌌던 가격보다 30% 이내예요. 싸다는 표시일 뿐, 더 내려가지 않는다는 보장은 아니에요."]);
     sh.appendChild(how); v.appendChild(sh);
 
+    v.appendChild(reasonSection(c));
+
     var nl = el("a", "linkbtn"); nl.target = "_blank"; nl.rel = "noopener noreferrer";
     nl.href = "https://news.google.com/search?q=" + encodeURIComponent(c.n + " 코인") + "&hl=ko&gl=KR&ceid=KR%3Ako";
     nl.innerHTML = '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
     nl.appendChild(document.createTextNode(c.n + " 뉴스 보기")); v.appendChild(nl);
 
-    // 코인 SNS 보기: 로그인 없이 무료로 볼 수 있는 곳의 검색 결과로 연결해요
-    var EXT = '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
-    var qn = encodeURIComponent(c.n + " 코인"), qs = encodeURIComponent(c.s + " crypto");
-    var DEST = [
-      ["레딧", c.s + " 관련 최신 글", "https://www.reddit.com/search/?q=" + qs + "&sort=new"],
-      ["네이버 블로그·카페", c.n + " 후기·토론", "https://search.naver.com/search.naver?where=view&query=" + qn],
-      ["유튜브", c.n + " 영상 분석·후기(최신순)", "https://www.youtube.com/results?search_query=" + qn + "&sp=CAI%253D"],
-      ["코인마켓캡 커뮤니티", "투자자들이 남긴 글(구글 검색으로 열려요)", "https://www.google.com/search?q=" + encodeURIComponent("site:coinmarketcap.com/community " + c.s)]
-    ];
-    var sb = el("button", "snsbtn"); sb.setAttribute("aria-expanded", "false");
-    var sbl = el("span", null, c.n + " SNS 보기"), sbi = el("span", null, "▾");
-    sb.appendChild(sbl); sb.appendChild(sbi);
-    var sbox = el("div"); sbox.hidden = true;
-    var lst = el("div", "snsbox");
-    DEST.forEach(function(d){
-      var a = el("a", "snsrow"); a.href = d[2]; a.target = "_blank"; a.rel = "noopener noreferrer";
-      var t = el("div", "sn"); t.appendChild(el("b", null, d[0])); t.appendChild(el("div", null, d[1]));
-      a.appendChild(t); a.insertAdjacentHTML("beforeend", EXT); lst.appendChild(a);
-    });
-    sbox.appendChild(lst);
-    sbox.appendChild(el("p", "snsnote", "글을 앱 안으로 가져오지 않고, 각 서비스의 검색 결과를 새 창으로 열어요. 로그인 없이 볼 수 있는 곳만 모았어요. 이름이 짧거나 흔한 단어와 겹치는 코인은 관련 없는 글이 섞일 수 있어요."));
-    sb.onclick = function(){ var open = sbox.hidden; sbox.hidden = !open; sb.setAttribute("aria-expanded", open ? "true" : "false"); sbi.textContent = open ? "▴" : "▾" };
-    v.appendChild(sb); v.appendChild(sbox);
+
 
     v.appendChild(el("p", "foot", "저점은 지나고 나서야 확인할 수 있어요. 저점권은 가격이 그 기간 중 싼 쪽에 있다는 뜻일 뿐, 더 내려가지 않는다는 보장이 아니에요. 참고용이에요."));
     window.scrollTo(0, keepScroll ? y : 0);
