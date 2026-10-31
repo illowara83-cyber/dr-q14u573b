@@ -471,7 +471,9 @@ def run_once(cfg, demo=False):
 
     url = dashboard_url(cfg)
     tail = f"\n\n📊 {url}" if url else ""
-    manual = os.environ.get("EVENT_NAME") == "workflow_dispatch"
+    # 사람이 Run workflow 를 눌렀을 때만 "직접 실행"이에요. 외부 알람 서비스가 깨우는 실행은 manual=false 로 와요.
+    mr = os.environ.get("MANUAL_RUN")
+    manual = (mr == "true") if mr is not None else os.environ.get("EVENT_NAME") == "workflow_dispatch"
     if manual:   # 직접 실행했다면 오래 걸리는 전체 코인 작업 전에 먼저 알려요
         lines = [f"{x['name']} {fmt_price(x['price'])}원" for x in markets if x["status"] == "ok"]
         tg_send("✅ Dip Radar 실행을 시작했어요 (전체 코인 처리 중이라 몇 분 걸려요)\n" + ("\n".join(lines) or "시세를 가져오지 못했어요") + tail)
