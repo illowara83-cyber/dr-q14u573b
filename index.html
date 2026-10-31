@@ -298,6 +298,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     <h2>최근 알림</h2>
     <div class="card log" id="log"><div class="empty">아직 알림이 없어요.</div></div>
     <p class="foot" id="foot"></p>
+    <p class="foot" id="diag" style="margin-top:6px"></p>
   </div>
 
   <div id="detailView" hidden></div>
@@ -582,6 +583,15 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     else DATA.alerts.forEach(function(a){
       var li = el("div", "li"); li.appendChild(el("time", "num", kst(a.t))); li.appendChild(document.createTextNode(a.text)); log.appendChild(li);
     });
+    (function(){
+      var dg = (DATA.diag || {})[S.ex] || {}, t = "";
+      if(dg.total){
+        t = "데이터 상태 · " + EXN[S.ex] + ": 일봉을 2년(731일) 이상 받은 코인 " + (dg.long || 0) + "/" + dg.total + "개";
+        if(dg.v1 || dg.legacy) t += " · 최근 갱신: 새 방식 " + (dg.v1 || 0) + "개" + (dg.legacy ? ", 옛 방식 " + dg.legacy + "개" : "") + (dg.avg ? " (평균 " + dg.avg + "일치)" : "");
+        if(dg.err) t += " · 문제: " + dg.err;
+      }
+      $("diag").textContent = t; $("diag").hidden = !t;
+    })();
     var exn = EXN[S.ex];
     $("foot").textContent = exn + " 원화마켓 " + cur().coins.length + "개 기준이에요. 하락폭과 변동률은 지금 가격을 각 기간 전 일봉 종가와 비교한 값이고, 1일은 " + (S.ex === "upbit" ? "전일 종가(오전 9시) 대비 변동" : "최근 24시간 변동") + "이에요. 저점 칩의 숫자는 그 기간 최저가보다 지금 가격이 몇 % 높은지예요. 1주~12개월은 최저가와 최고가 범위의 아래쪽 15% 안, 역대는 최저가보다 30% 이내일 때 저점 근처(보라색)로 봐요. 역대는 " + exn + "이 주는 일봉 전체 기준이고 상장 90일 미만은 판정하지 않아요." + (S.ex === "upbit" ? " 업비트 화면은 시세와 저점 판단만 보여 줘요. 관심 종목, 매수·매도 신호, 텔레그램 알림은 빗썸 기준이에요." : "") + " 참고용 정보이며 수익을 보장하지 않아요. 상승은 빨강, 하락은 파랑으로 표시해요.";
   }

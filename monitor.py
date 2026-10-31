@@ -622,6 +622,7 @@ def run_once(cfg, demo=False):
         "updated_kst": now.astimezone(KST).strftime("%Y-%m-%d %H:%M"),
         "exchange": cfg["exchange"], "unit": cfg["unit"],
         "thresholds": {"buy": cs.BUY_TH, "sell": cs.SELL_TH},
+        "diag": {k: st.get("u", {}).get(k, {}).get("diag", {}) for k in ("bithumb", "upbit")},
         "markets": markets, "watch": list(cfg.get("markets") or []), "watch_upbit": list(cfg.get("markets_upbit") or []),
         "coins": coins, "stale": stale, "exchanges": ["bithumb", "upbit"] if upbit else ["bithumb"],
         "alerts": list(reversed(st["history"]))[:20],

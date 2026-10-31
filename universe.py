@@ -33,7 +33,7 @@ REBOUND_DAYS = 14   # 저점이 최근 14일 안이어야 반등으로 봐요
 UPBIT_THROTTLE = 0.25  # 업비트 요청 사이 쉬는 시간(초) - 요청 제한을 넘지 않게
 HOURS = 169            # 시간봉 보관 개수: 지금 + 7일(168시간)
 BITHUMB_THROTTLE = 0.03
-STATS_VER = 3          # 일봉을 받는 방식이 바뀌면 올려서 모든 코인을 다시 받아요
+STATS_VER = 4          # 일봉을 받는 방식이 바뀌면 올려서 모든 코인을 다시 받아요
 
 
 _RUN = {"deadline": 0.0, "fails": 0}   # 이번 실행에서 쓸 수 있는 시간 / 연속 실패 횟수
@@ -150,7 +150,8 @@ def bithumb_rows(sym, prev):
     except TimeoutError:
         raise
     except Exception as e:
-        print(f"{sym}: 빗썸 새 일봉 API 실패, 옛 방식으로 받아요 ({str(e)[:40]})")
+        _note_err(f"새 일봉 API 실패: {e}")
+    _DIAG["legacy"] += 1
     return bithumb_rows_legacy(sym, prev)
 
 
@@ -209,26 +210,56 @@ def upbit_names():
         return {}
 
 
+_DIAG = {"v1": 0, "short": 0, "legacy": 0, "rows": 0, "err": ""}
+_TO_OK = {}   # 어떤 'to' 형식이 통했는지 기억해요
+
+
+def _note_err(e):
+    if not _DIAG["err"]:
+        _DIAG["err"] = str(e)[:120]
+
+
+def _to_formats(ex):
+    """과거 일봉을 이어 받을 때 보내는 기준 시각. 업비트는 UTC+Z, 빗썸은 한국 시간(문서 기준)이에요."""
+    if ex == "bithumb":
+        return [lambda r: r["candle_date_time_kst"].replace("T", " "), lambda r: r["candle_date_time_kst"]]
+    return [lambda r: r["candle_date_time_utc"] + "Z"]
+
+
 def v1_rows(ex, sym, prev, total=800, throttle=0.0):
-    """일봉 최근 800개(200개씩 4번) + 월봉 1번(역대 최저·최고) + 시간봉 1번. 월봉은 코인당 한 번만 받아요.
-    (업비트·빗썸 새 API 공통: 200개씩 'to' 이전 것을 이어서 받아요)"""
+    """일봉 최근 800개(200개씩 최대 8번까지 이어서) + 월봉 1번(역대 최저·최고) + 시간봉 1번.
+    중간 페이지가 실패해도 이미 받은 만큼은 버리지 않아요."""
     base = BASES[ex]
-    rows, to = [], None
-    while len(rows) < total:
+    page = _get(f"{base}/v1/candles/days?" + urllib.parse.urlencode({"market": "KRW-" + sym, "count": min(200, total)}))
+    rows = list(page or [])
+    last = page[-1] if page else None
+    fmts, pages = _to_formats(ex), 1
+    while rows and last is not None and len(rows) < total and pages < 8:
         n = min(200, total - len(rows))
-        q = {"market": "KRW-" + sym, "count": n}
-        if to:
-            q["to"] = to
-        page = _get(f"{base}/v1/candles/days?" + urllib.parse.urlencode(q))
+        got, err = None, None
+        order = list(range(len(fmts)))
+        if _TO_OK.get(ex) in order:
+            order.remove(_TO_OK[ex]); order.insert(0, _TO_OK[ex])
+        for fi in order:
+            q = {"market": "KRW-" + sym, "count": n, "to": fmts[fi](last)}
+            try:
+                got = _get(f"{base}/v1/candles/days?" + urllib.parse.urlencode(q))
+                _TO_OK[ex] = fi
+                break
+            except TimeoutError:
+                raise
+            except Exception as e:
+                err = e
         if throttle:
             time.sleep(throttle)
-        if not page:
+        pages += 1
+        if got is None:
+            _note_err(f"과거 일봉 이어받기 실패: {err}")
             break
-        rows.extend(page)
-        new_to = page[-1]["candle_date_time_utc"] + "Z"
-        if new_to == to or len(page) < n:
+        if not got or got[-1]["candle_date_time_utc"] == last["candle_date_time_utc"]:
             break
-        to = new_to
+        rows.extend(got)
+        last = got[-1]
     out, seen = [], set()
     for r in rows:
         d = r["candle_date_time_kst"][:10]
@@ -245,7 +276,7 @@ def v1_rows(ex, sym, prev, total=800, throttle=0.0):
         except Exception as e:
             if isinstance(e, TimeoutError):
                 raise
-            print(f"{sym}: 월봉 실패 {str(e)[:50]}")
+            _note_err(f"월봉 실패: {e}")
             months = None
         if throttle:
             time.sleep(throttle)
@@ -265,6 +296,10 @@ def v1_rows(ex, sym, prev, total=800, throttle=0.0):
         if isinstance(e, TimeoutError):
             raise
         hourly = None
+    _DIAG["v1"] += 1
+    _DIAG["rows"] += len(out)
+    if len(out) < 731:
+        _DIAG["short"] += 1
     return out, ext, hourly
 
 
@@ -513,6 +548,7 @@ def build(cfg, st, demo=False, ex="bithumb", budget=100):
     workers, batch_n = (8, 40) if ex == "bithumb" else (3, 12)
     deadline = time.time() + budget
     _RUN["deadline"], _RUN["fails"] = deadline, 0
+    _DIAG.update({"v1": 0, "short": 0, "legacy": 0, "rows": 0, "err": ""})
     done = 0
     for i in range(0, len(todo), batch_n):
         if time.time() > deadline:
@@ -534,6 +570,12 @@ def build(cfg, st, demo=False, ex="bithumb", budget=100):
     for s in syms:
         if ust.get(s):
             append_hourly(ust[s], tick[s]["p"], now_ts)
+    if todo:
+        U["diag"] = {"v1": _DIAG["v1"], "legacy": _DIAG["legacy"], "short": _DIAG["short"],
+                     "avg": round(_DIAG["rows"] / _DIAG["v1"]) if _DIAG["v1"] else 0, "err": _DIAG["err"], "date": today}
+    d = U.setdefault("diag", {})
+    d["long"] = sum(1 for x in ust.values() if x.get("n", 0) >= 731)
+    d["total"] = len(ust)
     coins = [build_coin(ex, s, names.get(s, s), tick[s], ust.get(s), today, s in cau_set) for s in syms]
     for s in list(ust):  # 상장폐지된 코인 정리
         if s not in tick:
