@@ -675,7 +675,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
       head.appendChild(el("span", "mu", sortLabel(CP) + " 변동"));
       head.appendChild(el("b", "num " + tone(ch), ch == null ? "-" : fmtPct(ch)));
       if(data === undefined){ box.appendChild(el("div", "sk")); return }
-      if(data === null){ box.appendChild(el("div", "empty", "이 코인의 차트 데이터를 아직 만들지 못했어요. 자동 실행이 한두 번 더 돌면 나타나요(보통 10~30분).")); return }
+      if(data === null){ box.appendChild(el("div", "empty", "이 코인의 차트 데이터를 아직 만들지 못했어요. 자동 실행이 한두 번 더 돌면 나타나요(보통 5~15분).")); return }
       var vals = data[CP];
       if(!vals || vals.length < 2){ box.appendChild(el("div", "empty", "이 기간의 데이터가 아직 없어요. 상장한 지 얼마 안 됐거나 시간별 가격을 모으는 중이에요.")); return }
       drawLine(box, info, vals, CP);
@@ -711,7 +711,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
       return;
     }
     if(NEWS === false || !NEWS.items.length){
-      v.appendChild(el("div", "empty", "뉴스는 다음 자동 실행 뒤에 나타나요(보통 30분 안). 계속 비어 있으면 알려 주세요."));
+      v.appendChild(el("div", "empty", "뉴스는 다음 자동 실행 뒤에 나타나요(보통 10분 안). 계속 비어 있으면 알려 주세요."));
       return;
     }
     if(NEWS.stale) v.appendChild(el("div", "alert", "뉴스를 새로 받지 못해서 이전 기사를 보여 주고 있어요."));
@@ -889,6 +889,11 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     });
     card2.appendChild(g);
     if(example) card2.appendChild(el("p", "note", "칸 아래 작은 숫자가 그때 가격이에요. 예: " + example[0] + " 전 " + fmtPrice(example[1]) + "원 → 지금 " + fmtPrice(c.p) + "원이라 " + fmtPct(Math.abs(example[2])).replace("+", "") + " " + (example[2] >= 0 ? "올랐어요." : "내렸어요.")));
+    if(c.since){
+      var cov = age >= 800 ? "최근 800일(약 2년 2개월)치 일봉을 받아서 계산해요 · 기록 시작 " + c.since
+                           : "일봉 기록: " + c.since + "부터 " + age + "일치" + (age < 731 ? " · 24개월 비교에는 731일(약 2년) 이상이 필요해요" : "");
+      card2.appendChild(el("p", "note", cov));
+    }
     s2.appendChild(card2); v.appendChild(s2);
     v.appendChild(chartSection(c));
 
@@ -968,7 +973,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
       .catch(function(){
         if(!DATA){
           $("sub").textContent = "데이터가 아직 없어요"; $("dot").className = "dot bad";
-          var l = $("list"); l.textContent = ""; l.appendChild(el("div", "empty", "첫 자동 실행이 끝나면 여기에 나타나요. (설정 후 최대 10~15분)"));
+          var l = $("list"); l.textContent = ""; l.appendChild(el("div", "empty", "첫 자동 실행이 끝나면 여기에 나타나요. (설정 후 최대 5~15분)"));
         }
       });
   }
@@ -983,7 +988,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
         upLoading = false;
         if(!quiet && S.ex === "upbit" && !UP){
           $("sub").textContent = "업비트 데이터를 준비 중이에요"; $("dot").className = "dot old";
-          var l = $("list"); l.textContent = ""; l.appendChild(el("div", "empty", "업비트 데이터는 첫 자동 실행이 끝나면 나타나요. 처음에는 몇 번의 실행(10~30분)이 걸릴 수 있어요."));
+          var l = $("list"); l.textContent = ""; l.appendChild(el("div", "empty", "업비트 데이터는 첫 자동 실행이 끝나면 나타나요. 처음에는 몇 번의 실행(5~30분)이 걸릴 수 있어요."));
           $("more").hidden = true;
         }
       });

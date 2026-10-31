@@ -1,0 +1,68 @@
+name: monitor
+
+on:
+  schedule:
+    # 5분마다(GitHub가 허용하는 가장 짧은 간격). 정각(0분)을 피해서 2, 7, 12 ... 57분에 돌아요.
+    - cron: "2-57/5 * * * *"
+  workflow_dispatch:
+  repository_dispatch:
+    types: [tick]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: monitor
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 이전 실행에서 저장한 상태(마지막 신호, 보낸 알림 기록)를 불러와요
+      - uses: actions/cache@v4
+        with:
+          path: state
+          key: state-${{ github.run_id }}
+          restore-keys: |
+            state-
+
+      - name: Run monitor
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: python monitor.py
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+      # 저장소에 한 달 넘게 변화가 없으면 GitHub 가 자동 실행을 끌 수 있어서 가끔 빈 기록을 남겨요
+      - name: Keepalive
+        run: |
+          last=$(git log -1 --format=%ct)
+          now=$(date +%s)
+          if [ $((now - last)) -gt 2592000 ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "keepalive"
+            git push
+          fi

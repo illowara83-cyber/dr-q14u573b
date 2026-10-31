@@ -3,7 +3,7 @@
 코인 신호 모니터
   시세 점검 → 텔레그램 알림 → 대시보드용 data.json 생성
 
-GitHub Actions 에서 10분마다 자동 실행되고, 내 PC 에서도 돌릴 수 있습니다.
+GitHub Actions 에서 5분마다(정각을 피해서) 자동 실행되고, 내 PC 에서도 돌릴 수 있습니다.
 
   python monitor.py                 # 한 번 실행 (site/ 폴더에 대시보드 생성)
   python monitor.py --loop 300      # 5분마다 계속 실행 (PC 에서 쓸 때)

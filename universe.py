@@ -32,6 +32,8 @@ REBOUND_PCT = 0.04  # 저점에서 4% 이상 올라서면 반등
 REBOUND_DAYS = 14   # 저점이 최근 14일 안이어야 반등으로 봐요
 UPBIT_THROTTLE = 0.25  # 업비트 요청 사이 쉬는 시간(초) - 요청 제한을 넘지 않게
 HOURS = 169            # 시간봉 보관 개수: 지금 + 7일(168시간)
+BITHUMB_THROTTLE = 0.03
+STATS_VER = 3          # 일봉을 받는 방식이 바뀌면 올려서 모든 코인을 다시 받아요
 
 
 _RUN = {"deadline": 0.0, "fails": 0}   # 이번 실행에서 쓸 수 있는 시간 / 연속 실패 횟수
@@ -140,7 +142,20 @@ def bithumb_names():
 
 
 def bithumb_rows(sym, prev):
-    """[(날짜, 시가, 고가, 저가, 종가)] 오래된 것부터. 빗썸은 일봉 전체를 한 번에 줘요."""
+    """새 API(200개씩 거슬러 올라가기)로 먼저 받고, 안 되면 옛 API로 받아요"""
+    try:
+        res = v1_rows("bithumb", sym, prev, 800, BITHUMB_THROTTLE)
+        if len(res[0]) >= 2:
+            return res
+    except TimeoutError:
+        raise
+    except Exception as e:
+        print(f"{sym}: 빗썸 새 일봉 API 실패, 옛 방식으로 받아요 ({str(e)[:40]})")
+    return bithumb_rows_legacy(sym, prev)
+
+
+def bithumb_rows_legacy(sym, prev):
+    """[(날짜, 시가, 고가, 저가, 종가)] 오래된 것부터. 옛 API는 일봉을 한 번에 주지만 기간이 짧을 수 있어요."""
     js = _get(f"{BASES['bithumb']}/public/candlestick/{sym}_KRW/24h")
     if js.get("status") != "0000":
         raise RuntimeError(f"{sym} 일봉 오류")
@@ -194,9 +209,10 @@ def upbit_names():
         return {}
 
 
-def upbit_rows(sym, prev, total=800):
-    """일봉 최근 800개(200개씩 4번) + 월봉 1번(역대 최저·최고). 월봉은 코인당 한 번만 받아요."""
-    base = BASES["upbit"]
+def v1_rows(ex, sym, prev, total=800, throttle=0.0):
+    """일봉 최근 800개(200개씩 4번) + 월봉 1번(역대 최저·최고) + 시간봉 1번. 월봉은 코인당 한 번만 받아요.
+    (업비트·빗썸 새 API 공통: 200개씩 'to' 이전 것을 이어서 받아요)"""
+    base = BASES[ex]
     rows, to = [], None
     while len(rows) < total:
         n = min(200, total - len(rows))
@@ -204,7 +220,8 @@ def upbit_rows(sym, prev, total=800):
         if to:
             q["to"] = to
         page = _get(f"{base}/v1/candles/days?" + urllib.parse.urlencode(q))
-        time.sleep(UPBIT_THROTTLE)
+        if throttle:
+            time.sleep(throttle)
         if not page:
             break
         rows.extend(page)
@@ -226,9 +243,12 @@ def upbit_rows(sym, prev, total=800):
         try:
             months = _get(f"{base}/v1/candles/months?market=KRW-{sym}&count=200")
         except Exception as e:
+            if isinstance(e, TimeoutError):
+                raise
             print(f"{sym}: 월봉 실패 {str(e)[:50]}")
             months = None
-        time.sleep(UPBIT_THROTTLE)
+        if throttle:
+            time.sleep(throttle)
         if months:
             lo = min(months, key=lambda r: float(r["low_price"]))
             hi = max(months, key=lambda r: float(r["high_price"]))
@@ -237,12 +257,19 @@ def upbit_rows(sym, prev, total=800):
     hourly = None
     try:  # 1일·1주 차트용 시간봉 (실패해도 괜찮아요)
         hp = _get(f"{base}/v1/candles/minutes/60?market=KRW-{sym}&count=200")
-        time.sleep(UPBIT_THROTTLE)
+        if throttle:
+            time.sleep(throttle)
         if hp:
             hourly = [float(x["trade_price"]) for x in sorted(hp, key=lambda x: x["candle_date_time_utc"])][-HOURS:]
-    except Exception:
+    except Exception as e:
+        if isinstance(e, TimeoutError):
+            raise
         hourly = None
     return out, ext, hourly
+
+
+def upbit_rows(sym, prev, total=800):
+    return v1_rows("upbit", sym, prev, total, UPBIT_THROTTLE)
 
 
 # ───────────────────────── 시험용(가짜) 데이터 ─────────────────────────
@@ -300,7 +327,7 @@ def make_stats(rows, today, ext=None, hourly=None, prev=None):
     n = len(rows)
     if n < 2:
         return None
-    st = {"date": today, "n": n, "close": {}, "low": {}, "high": {}, "ldate": {}, "hdate": {}}
+    st = {"date": today, "n": n, "since": rows[0][0], "v": STATS_VER, "close": {}, "low": {}, "high": {}, "ldate": {}, "hdate": {}}
     st["ser"] = make_series(rows)
     if hourly:
         st["hp"], st["hts"] = [sig5(x) for x in hourly[-HOURS:]], time.time()
@@ -333,7 +360,7 @@ def make_stats(rows, today, ext=None, hourly=None, prev=None):
 
 
 def append_hourly(stat, p, now_ts):
-    """10분마다 도는 동안 한 시간에 한 번씩 현재가를 덧붙여서 1일·1주 차트를 이어 가요"""
+    """자동 실행이 도는 동안 한 시간에 한 번씩 현재가를 덧붙여서 1일·1주 차트를 이어 가요"""
     hp = stat.get("hp")
     if hp is None:
         return
@@ -402,7 +429,7 @@ def build_coin(ex, sym, name, tk, stat, today, caution=False):
     p = tk["p"]
     coin = {"m": "KRW-" + sym, "n": name, "s": sym, "p": sig(p), "v": round(tk["v"]),
             "ch": {"d": round(tk["d"], 5)}, "lo": {}, "pl": {}, "tag": "NONE", "tg": "데이터 준비 중",
-            "age": (stat or {}).get("n", 0)}
+            "age": (stat or {}).get("n", 0), "since": (stat or {}).get("since", "")}
     if caution:
         coin["cau"] = 1
     if not stat:
@@ -475,7 +502,7 @@ def build(cfg, st, demo=False, ex="bithumb", budget=100):
     syms = [s for s, t in tick.items() if t["v"] >= min_v]
     todo = [s for s in syms if _needs_refresh(ust.get(s), today)]
     first = {m.split("-", 1)[-1] for m in (cfg.get("pin") or []) + (cfg.get("markets") or [])}
-    todo.sort(key=lambda x: (x not in first,))   # 관심 종목을 먼저 받아서 차트가 빨리 나오게 해요
+    todo.sort(key=lambda x: (x not in first, -tick[x]["v"]))   # 관심 종목, 그다음 거래대금이 큰 코인부터 받아요
 
     if demo:
         fetch = lambda s: (demo_series(s), None, demo_hourly(s))
@@ -520,7 +547,7 @@ def _needs_refresh(stat, today):
     """오늘 일봉을 아직 못 받았거나, 역대·차트용 데이터가 빠진 코인은 다시 받아요"""
     if not stat or stat.get("date") != today:
         return True
-    if "a" not in stat.get("low", {}) or "ser" not in stat:
+    if "a" not in stat.get("low", {}) or "ser" not in stat or stat.get("v") != STATS_VER:
         return True
     if "hp" not in stat and stat.get("hfail") != today:   # 시간봉을 못 받은 코인도 하루 한 번은 다시 시도
         return True
