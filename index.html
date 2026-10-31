@@ -210,6 +210,8 @@ a.nwc:hover{background:var(--muted)}
 .bar u i{position:absolute; bottom:22px; left:50%; transform:translateX(-50%); font-style:normal; font-size:11px; color:var(--fg); white-space:nowrap}
 .ends{display:flex; justify-content:space-between; font-size:12px; color:var(--mfg)}
 .cell span{display:block; font-size:11px; color:var(--mfg); margin-top:1px}
+button.cell{color:inherit; font:inherit; cursor:pointer; width:100%}
+button.cell:hover{background:var(--muted)}
 .how{display:flex; flex-direction:column; gap:12px; font-size:13.5px; line-height:1.6}
 .how .hh{font-size:14px; font-weight:600}
 .how .n{display:flex; gap:10px}
@@ -663,7 +665,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     svg.addEventListener("pointerleave", rest); svg.addEventListener("pointerup", rest); svg.addEventListener("pointercancel", rest);
     rest();
   }
-  function chartSection(c){
+  function chartSection(c, onPick){
     var sec = section("가격 차트", "기간을 고르면 바뀌어요"), card = el("div", "card");
     var tabs = el("div", "seg"), head = el("div", "chead"), box = el("div", "cbox"), info = el("div", "cinfo");
     tabs.setAttribute("role", "group"); tabs.setAttribute("aria-label", "차트 기간");
@@ -675,7 +677,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
       tabs.textContent = "";
       SORTS.forEach(function(p){
         var b = el("button", null, p[1]); b.setAttribute("aria-pressed", CP === p[0] ? "true" : "false");
-        b.onclick = function(){ CP = p[0]; tabsRender(); draw() };
+        b.onclick = function(){ CP = p[0]; tabsRender(); draw(); if(onPick) onPick(CP) };
         tabs.appendChild(b);
       });
     }
@@ -692,6 +694,7 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     }
     tabsRender(); draw();
     loadChart(c, function(d){ data = d; draw() });
+    sec.pick = function(k){ CP = k; tabsRender(); draw() };
     return sec;
   }
 
@@ -887,9 +890,20 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     // ③ 기간별 변동률 (그때 가격까지 보여 줘요)
     var s2 = section("기간별 변동률"), lead2 = el("p", "lead", "그때 가격과 비교해서 지금이 몇 % 높고 낮은지예요. 빨강은 올랐다는 뜻, 파랑은 내렸다는 뜻이에요.");
     s2.appendChild(lead2);
-    var card2 = el("div", "card"), g = el("div", "grid7"), example = null;
+    var card2 = el("div", "card"), g = el("div", "grid7"), example = null, cellMap = {}, chartSec = null;
+    if(!CP) CP = S.sort;
+    function syncCells(){
+      Object.keys(cellMap).forEach(function(k){
+        cellMap[k].className = "cell" + (k === CP ? " sel" : "");
+        cellMap[k].setAttribute("aria-pressed", k === CP ? "true" : "false");
+      });
+    }
     SORTS.forEach(function(sp){
-      var chv = c.ch[sp[0]], cell = el("div", "cell" + (sp[0] === S.sort ? " sel" : ""));
+      var chv = c.ch[sp[0]], cell = el("button", "cell" + (sp[0] === CP ? " sel" : ""));
+      cell.setAttribute("aria-pressed", sp[0] === CP ? "true" : "false");
+      cell.setAttribute("aria-label", sp[1] + " 전 변동률, 누르면 아래 차트가 그 기간으로 바뀌어요");
+      cellMap[sp[0]] = cell;
+      cell.onclick = function(){ CP = sp[0]; syncCells(); if(chartSec) chartSec.pick(sp[0]) };
       cell.appendChild(el("i", null, sp[1] + " 전"));
       cell.appendChild(el("b", "num " + tone(chv), chv == null ? "-" : fmtPct(chv)));
       var ref = chv == null ? null : c.p / (1 + chv);
@@ -905,7 +919,8 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
       card2.appendChild(el("p", "note", cov));
     }
     s2.appendChild(card2); v.appendChild(s2);
-    v.appendChild(chartSection(c));
+    chartSec = chartSection(c, syncCells);
+    v.appendChild(chartSec);
 
     var s3 = section("관심과 알림"), card3 = el("div", "card"), inW = !!WS[c.m];
     if(w && w.status === "ok"){
