@@ -1103,6 +1103,10 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
   }
 
   (function init(){
+    (function(){   // 저장소 이름을 바꿔도 안내 문구의 출처 링크가 맞게 이어지도록 주소에서 알아내요
+      var a = document.querySelector(".legal a"), m = /^([^.]+)\.github\.io$/i.exec(location.hostname), r = location.pathname.split("/")[1];
+      if(a && m && r) a.href = "https://github.com/" + m[1] + "/" + r + "/blob/main/NOTICE.md";
+    })();
     countVisit();
     setTheme(curTheme());
     $("theme").onclick = function(){
