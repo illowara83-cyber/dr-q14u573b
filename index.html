@@ -1024,7 +1024,27 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     THEMES.forEach(function(x){ if(x[0] === t) $("theme").textContent = x[1] });
   }
 
+  /* ---------- 방문 집계 (GoatCounter: 앱을 열 때 한 번, 개인정보 없이) ---------- */
+  var STAT_SITE = "dipradar";
+  function countVisit(){
+    try{
+      var h = location.hash;
+      if(h === "#nostat" || h === "#stat"){   // 내 기기를 집계에서 빼거나(#nostat) 다시 넣기(#stat)
+        if(h === "#nostat") lsSet("dr_nostat", "1"); else lsDel("dr_nostat");
+        history.replaceState(null, "", location.pathname + location.search);
+        toast(h === "#nostat" ? "이 기기는 방문 집계에서 제외했어요" : "이 기기도 방문 집계에 포함해요");
+      }
+      if(lsGet("dr_nostat") === "1") return;
+      if(!/\.github\.io$/i.test(location.hostname)) return;   // 내 PC에서 파일을 열어 본 것은 세지 않아요
+      var q = "https://" + STAT_SITE + ".goatcounter.com/count?p=" + encodeURIComponent("/") + "&t=" + encodeURIComponent(document.title)
+            + "&r=" + encodeURIComponent(document.referrer || "") + "&s=" + encodeURIComponent(screen.width + "," + screen.height + ",1")
+            + "&rnd=" + Math.random().toString(36).slice(2);
+      new Image().src = q;
+    }catch(e){}
+  }
+
   (function init(){
+    countVisit();
     setTheme(curTheme());
     $("theme").onclick = function(){
       var i = 0; THEMES.forEach(function(x, k){ if(x[0] === curTheme()) i = k });
