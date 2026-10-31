@@ -170,6 +170,20 @@ a.nwc:hover{background:var(--muted)}
 .nnew{color:var(--gr); font-weight:600}
 .linkbtn{display:flex; align-items:center; justify-content:center; gap:8px; height:46px; border:1px solid var(--bd); border-radius:var(--radius); background:var(--card); color:var(--fg); text-decoration:none; font-weight:500; font-size:14px; margin-bottom:16px}
 .linkbtn:hover{background:var(--muted)}
+.snsbtn{display:flex; align-items:center; justify-content:center; gap:8px; width:100%; min-height:46px; border:1px solid var(--bd); border-radius:var(--radius); background:var(--card); color:var(--fg); font-weight:500; font-size:14px; margin-bottom:10px}
+.snsbtn:hover{background:var(--muted)}
+.snsbtn[aria-expanded="true"]{border-color:var(--fg)}
+.snsbox{background:var(--card); border:1px solid var(--bd); border-radius:14px; padding:2px 14px; margin-bottom:8px}
+.snsrow{display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid var(--bd); min-height:62px; text-decoration:none; color:inherit}
+.snsrow:last-of-type{border-bottom:0}
+.snsrow:hover{opacity:.85}
+.snsrow .sn{flex:1; min-width:0}
+.snsrow .sn b{font-weight:600; font-size:15px}
+.snsrow .sn div{font-size:12.5px; color:var(--mfg); margin-top:1px}
+.snsrow svg.i{width:18px; height:18px; color:var(--mfg); flex:none}
+.legal{font-size:11.5px; color:var(--mfg); line-height:1.75; margin:28px 2px 10px; padding-top:14px; border-top:1px solid var(--bd)}
+.legal a{color:var(--fg); text-decoration:underline}
+.snsnote{font-size:12px; color:var(--mfg); line-height:1.6; margin:2px 2px 16px}
 .cau{font-size:11.5px; font-weight:600; background:var(--am); color:var(--bg); border-radius:4px; padding:0 6px; margin-left:6px; vertical-align:2px}
 .wp{display:flex; flex-direction:column; gap:10px; margin-top:12px}
 .wp .wtop b{font-size:15px; font-weight:600}
@@ -305,6 +319,12 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
 
   <div id="detailView" hidden></div>
   <div id="newsView" hidden></div>
+
+  <footer class="legal">
+    Dip Radar는 개인이 만든 비공식 프로젝트예요. 빗썸·업비트·구글 뉴스·각 언론사와 관련이 없고, 시세와 뉴스 제목의 권리는 각 출처에 있어요.
+    참고용 정보이며 투자 판단과 그 결과의 책임은 본인에게 있어요. 방문 수는 개인정보 없이 익명으로 집계해요.
+    프로그램 코드는 MIT 라이선스예요. <a href="https://github.com/illowara83-cyber/signal-wpgh8-/blob/main/NOTICE.md" target="_blank" rel="noopener noreferrer">라이선스·출처 보기</a>
+  </footer>
 <div id="toast" role="status"></div>
 </div>
 
@@ -955,6 +975,30 @@ code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--m
     nl.href = "https://news.google.com/search?q=" + encodeURIComponent(c.n + " 코인") + "&hl=ko&gl=KR&ceid=KR%3Ako";
     nl.innerHTML = '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
     nl.appendChild(document.createTextNode(c.n + " 뉴스 보기")); v.appendChild(nl);
+
+    // 코인 SNS 보기: 로그인 없이 무료로 볼 수 있는 곳의 검색 결과로 연결해요
+    var EXT = '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
+    var qn = encodeURIComponent(c.n + " 코인"), qs = encodeURIComponent(c.s + " crypto");
+    var DEST = [
+      ["레딧", c.s + " 관련 최신 글", "https://www.reddit.com/search/?q=" + qs + "&sort=new"],
+      ["네이버 블로그·카페", c.n + " 후기·토론", "https://search.naver.com/search.naver?where=view&query=" + qn],
+      ["유튜브", c.n + " 영상 분석·후기(최신순)", "https://www.youtube.com/results?search_query=" + qn + "&sp=CAI%253D"],
+      ["코인마켓캡 커뮤니티", "투자자들이 남긴 글(구글 검색으로 열려요)", "https://www.google.com/search?q=" + encodeURIComponent("site:coinmarketcap.com/community " + c.s)]
+    ];
+    var sb = el("button", "snsbtn"); sb.setAttribute("aria-expanded", "false");
+    var sbl = el("span", null, c.n + " SNS 보기"), sbi = el("span", null, "▾");
+    sb.appendChild(sbl); sb.appendChild(sbi);
+    var sbox = el("div"); sbox.hidden = true;
+    var lst = el("div", "snsbox");
+    DEST.forEach(function(d){
+      var a = el("a", "snsrow"); a.href = d[2]; a.target = "_blank"; a.rel = "noopener noreferrer";
+      var t = el("div", "sn"); t.appendChild(el("b", null, d[0])); t.appendChild(el("div", null, d[1]));
+      a.appendChild(t); a.insertAdjacentHTML("beforeend", EXT); lst.appendChild(a);
+    });
+    sbox.appendChild(lst);
+    sbox.appendChild(el("p", "snsnote", "글을 앱 안으로 가져오지 않고, 각 서비스의 검색 결과를 새 창으로 열어요. 로그인 없이 볼 수 있는 곳만 모았어요. 이름이 짧거나 흔한 단어와 겹치는 코인은 관련 없는 글이 섞일 수 있어요."));
+    sb.onclick = function(){ var open = sbox.hidden; sbox.hidden = !open; sb.setAttribute("aria-expanded", open ? "true" : "false"); sbi.textContent = open ? "▴" : "▾" };
+    v.appendChild(sb); v.appendChild(sbox);
 
     v.appendChild(el("p", "foot", "저점은 지나고 나서야 확인할 수 있어요. 저점권은 가격이 그 기간 중 싼 쪽에 있다는 뜻일 뿐, 더 내려가지 않는다는 보장이 아니에요. 참고용이에요."));
     window.scrollTo(0, keepScroll ? y : 0);
